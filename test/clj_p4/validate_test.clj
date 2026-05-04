@@ -1,10 +1,22 @@
 (ns clj-p4.validate-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clj-p4.api :as api]
             [clj-p4.shell.p4 :as p4]
             [clj-p4.validate :as validate]))
+
+;; See clj-p4.api-test: 0.12.0 routes streams through ephemeral
+;; clients by default. Force the create to fail so the pure-data
+;; fallback path runs instead.
+(use-fixtures
+  :each
+  (fn force-create-failure [test-fn]
+    (with-redefs [p4/create-stream-client!
+                  (fn [& _]
+                    (throw (ex-info "test stub: no client creation"
+                                    {:clj-p4/error :proc-failed})))]
+      (test-fn))))
 
 (defn- tmp-dir []
   (.toFile (java.nio.file.Files/createTempDirectory

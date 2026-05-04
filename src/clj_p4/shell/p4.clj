@@ -417,6 +417,27 @@
       (finally
         (delete-stream-client! conn name)))))
 
+(defn with-stream-client-or-fallback
+  "Like `with-ephemeral-client` but if `create-stream-client!` fails with
+   `:proc-failed` (typically because the server's protect table forbids
+   the user from creating clients), calls `(fallback)` instead of
+   throwing. Exceptions raised once `f` has started running propagate
+   normally — only pre-`f` create failures route to the fallback.
+   Used by the ephemeral-first dispatch added in 0.12.0 to fall back
+   to the pure-data parent-chain merge when no client can be created."
+  [conn stream-name f fallback]
+  (let [reached-f? (atom false)]
+    (try
+      (with-ephemeral-client conn stream-name
+        (fn [eph-conn info]
+          (reset! reached-f? true)
+          (f eph-conn info)))
+      (catch clojure.lang.ExceptionInfo e
+        (if (and (not @reached-f?)
+                 (= :proc-failed (:clj-p4/error (ex-data e))))
+          (fallback)
+          (throw e))))))
+
 (defn with-classic-client
   "Like `with-ephemeral-client` but creates a non-stream client whose
    `View:` maps `depot-path` to the client root. For classic

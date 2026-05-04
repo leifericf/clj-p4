@@ -180,3 +180,19 @@
              :stream-name "//stream/virt")]
       (is (= "src/x.cpp"
              (view/map-depot->local v "//stream/main/src/x.cpp"))))))
+
+(deftest client-view->view-resolves-components-test
+  (testing "Components: paths land in the client View block — auto-view sees them"
+    ;; A real Components: spec on a stream causes p4d to add the
+    ;; component's path to the client's auto-View. This input simulates
+    ;; what `p4 client -i` would render: the host stream plus a shared
+    ;; component dir.
+    (let [v (view/client-view->view
+             ["//stream/host/src/...      //eph/src/..."
+              "//stream/shared/lib/...    //eph/lib/..."]
+             :stream-name "//stream/host")]
+      (is (= "src/main.cpp"
+             (view/map-depot->local v "//stream/host/src/main.cpp")))
+      (testing "the component path resolves through the auto-view"
+        (is (= "lib/util.h"
+               (view/map-depot->local v "//stream/shared/lib/util.h")))))))

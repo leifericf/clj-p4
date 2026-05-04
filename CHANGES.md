@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.12.0-alpha
+
+Roadmap step 4 of 8 (post-0.8.0): ephemeral-first dispatch as default for all streams. Picks up server-resolved `Components:` (and any other view composition the server does) for free, since the server is now the source of truth for the view in every stream clone — not just virtual ones.
+
+### Added
+
+- **`clj-p4.shell.p4/with-stream-client-or-fallback`.** Like `with-ephemeral-client` but if `p4 client -i` fails with `:proc-failed` (typically because the server's protect table forbids the user from creating clients), invokes `(fallback)` instead of throwing. The fallback is the pure-data parent-chain merge — same one mainline / development / release streams used through 0.11.0.
+
+### Changed
+
+- **All stream clones now route through an ephemeral client by default.** Previously: only virtual streams (since 0.2.0) and classic depot paths (since 0.3.0) used an ephemeral client; mainline / development / release streams used a pure-data parent-chain merge. Now every stream type goes through the ephemeral path, which means `Components:` resolution works everywhere a stream uses it (it didn't before for non-virtual streams). Pure-data merge survives as the fallback when client creation is denied; virtual streams continue to refuse the fallback because they have no own depot path to query directly.
+- **`clone-via-ephemeral!` / `sync-via-ephemeral!` factored** into `run-ephemeral-import!` / `run-ephemeral-sync!` taking pre-built client info, so the `with-stream-client-or-fallback` lifecycle owns the create/delete pair.
+
+### Notes
+
+- **The cost is ~3 extra RPCs per `clone!`** (`p4 client -i` + `p4 client -o` + `p4 client -d`) for streams that previously took the direct path. That's a fixed per-clone overhead, not per-changelist, so it's invisible at multi-thousand-CL clone time but worth a benchmark line in 0.16.0. In return, every stream (not just virtual) now sees the server's complete view including any `Components:` it pulls in.
+
 ## 0.11.0-alpha
 
 Roadmap step 3 of 8 (post-0.8.0): multi-stream / multi-ref single repo. Two streams (or N) clone into one bare repo, each on its own ref, with a shared marks file so `merge :<C>` parents from 0.10.0 cross stream boundaries automatically.

@@ -1,11 +1,28 @@
 (ns clj-p4.api-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clj-p4.api :as api]
             [clj-p4.shell.git :as git]
             [clj-p4.shell.p4 :as p4]
             [clj-p4.shell.proc :as proc]))
+
+;; The 0.12.0 ephemeral-first dispatch tries `create-stream-client!`
+;; before any path that used to be `clone-direct!`. Force that creation
+;; to fail with `:proc-failed` so tests that exercise the pure-data
+;; parent-chain path (i.e. don't redef `with-ephemeral-client`) fall
+;; through to it. Tests that DO want to exercise the ephemeral lifecycle
+;; (e.g. virtual-stream-clones-via-ephemeral-client-test) override
+;; `with-ephemeral-client` itself, which short-circuits the failing
+;; `create-stream-client!` stub.
+(use-fixtures
+  :each
+  (fn force-create-failure [test-fn]
+    (with-redefs [p4/create-stream-client!
+                  (fn [& _]
+                    (throw (ex-info "test stub: no client creation"
+                                    {:clj-p4/error :proc-failed})))]
+      (test-fn))))
 
 (defn- tmp-dir []
   (.toFile (java.nio.file.Files/createTempDirectory
@@ -927,6 +944,62 @@
     (is (= "refs/heads/legacy" (#'api/default-ref-of-source "//depot/legacy")))
     (is (= "refs/heads/main"   (#'api/default-ref-of-source "//stream/main/...")))
     (is (= "refs/heads/src"    (#'api/default-ref-of-source "//depot/legacy/src/...")))))
+
+(deftest ephemeral-first-dispatch-uses-server-view-test
+  (testing "0.12.0: stream clones use the server-resolved client view by default"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))
+          ;; The client View block here includes a path the parent-chain
+          ;; merge wouldn't produce (//stream/main/extra/...). With the
+          ;; ephemeral-first dispatch, a file under that path imports;
+          ;; the pure-data merge would have filtered it out.
+          view-lines ["//stream/main/src/...   //eph/src/..."
+                      "//stream/main/extra/... //eph/extra/..."]
+          with-eph (fn [_conn _stream f]
+                     (let [info {:client/name "eph"
+                                 :client/view-lines view-lines}
+                           eph-conn {:p4/port "h:1666" :p4/client "eph"}]
+                       (f eph-conn info)))
+          fixture-cl {:p4/change 100 :p4/user "x" :p4/time 0
+                      :p4/desc "extra"
+                      :p4/files [{:rev/depot "//stream/main/extra/component.cpp"
+                                  :rev/rev 1 :rev/action :add :rev/type :text
+                                  :rev/flags #{} :rev/keyword-flags #{}}]}]
+      (try
+        (with-redefs [p4/info                  (constantly info-2024)
+                      p4/stream-chain          (constantly [mainline])
+                      p4/with-ephemeral-client with-eph
+                      p4/changes               (fn [_ _ & _] [{:p4/change 100}])
+                      p4/describe              (constantly fixture-cl)
+                      p4/print-bytes!          print-bytes-stub]
+          (api/clone! {:conn   {:p4/port "h:1666"}
+                       :stream "//stream/main"
+                       :target target}))
+        (testing "the extra-component file imports because the server view sees it"
+          (let [{:keys [stdout-bytes]}
+                (proc/run-checked! ["git" "-C" target "ls-tree" "-r"
+                                    "refs/heads/main"])
+                listing (String. ^bytes stdout-bytes "UTF-8")]
+            (is (str/includes? listing "extra/component.cpp"))))
+        (finally (rm-rf d))))))
+
+(deftest fallback-to-direct-when-client-create-denied-test
+  (testing "create-stream-client! :proc-failed routes to clone-direct! parent-chain"
+    ;; The :each fixture already forces create-failure; this test just
+    ;; verifies the user-visible result: a stream still clones.
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))]
+      (try
+        (with-redefs [p4/info         (constantly info-2024)
+                      p4/stream-chain (constantly [mainline])
+                      p4/changes      (fn [_ _ & _] [{:p4/change 100}])
+                      p4/describe     (fn [_ n] (describe-fixture n))
+                      p4/print-bytes! print-bytes-stub]
+          (let [result (api/clone! {:conn   {:p4/port "h:1666"}
+                                    :stream "//stream/main"
+                                    :target target})]
+            (is (= 1 (:commits result)))))
+        (finally (rm-rf d))))))
 
 (deftest stop-predicate-test
   (let [d (tmp-dir)]

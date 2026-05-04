@@ -194,41 +194,40 @@
            :commits     (count changes)
            :last-change (:last-change final)})))))
 
-(defn- clone-via-ephemeral!
-  "Clone path for streams that need an ephemeral client (virtual streams).
-   Creates the client, builds the view from the server-filled `View:`
-   block, runs the import, tears the client down."
-  [{:keys [conn stream target chain mode max-changes exclude
+(defn- run-ephemeral-import!
+  "Body of an ephemeral-client clone for a stream. Caller provides the
+   already-created client (`eph-conn`, `client-name`, `view-lines`).
+   The `with-stream-client-or-fallback` dispatch in `clone-one!` is the
+   only caller — it handles the ephemeral-client lifecycle."
+  [{:keys [stream target chain mode max-changes exclude
            fetch-parallelism max-print-bytes user-map emit-labels?
-           lookahead no-merge? ref progress-fn stop?]}]
-  (p4/with-ephemeral-client
-    conn stream
-    (fn [eph-conn {:client/keys [name view-lines]}]
-      (let [client-path (str "//" name "/...")
-            view-val    (view/client-view->view view-lines :stream-name stream)
-            changes     (resolve-changes eph-conn client-path
-                                         {:max-changes max-changes} mode)
-            plan-val    (plan/clone-plan
-                         {:conn         eph-conn
-                          :stream-chain chain
-                          :changelists  changes
-                          :target       target
-                          :view         view-val
-                          :excludes     exclude
-                          :options      (cond-> {:max-changes max-changes
-                                                 :checkpoint-every 1000}
-                                          fetch-parallelism (assoc :fetch-parallelism fetch-parallelism)
-                                          max-print-bytes   (assoc :max-print-bytes max-print-bytes)
-                                          user-map          (assoc :user-map user-map)
-                                          emit-labels?      (assoc :emit-labels? emit-labels?)
-                                          lookahead         (assoc :lookahead lookahead)
-                                          no-merge?         (assoc :no-merge? no-merge?))})]
-        (git/init-bare! target)
-        (let [final (run-fast-import! plan-val target eph-conn ref
-                                      progress-fn stop?)]
-          {:target      target
-           :commits     (count changes)
-           :last-change (:last-change final)})))))
+           lookahead no-merge? ref progress-fn stop?]}
+   eph-conn client-name view-lines]
+  (let [client-path (str "//" client-name "/...")
+        view-val    (view/client-view->view view-lines :stream-name stream)
+        changes     (resolve-changes eph-conn client-path
+                                     {:max-changes max-changes} mode)
+        plan-val    (plan/clone-plan
+                     {:conn         eph-conn
+                      :stream-chain chain
+                      :changelists  changes
+                      :target       target
+                      :view         view-val
+                      :excludes     exclude
+                      :options      (cond-> {:max-changes max-changes
+                                             :checkpoint-every 1000}
+                                      fetch-parallelism (assoc :fetch-parallelism fetch-parallelism)
+                                      max-print-bytes   (assoc :max-print-bytes max-print-bytes)
+                                      user-map          (assoc :user-map user-map)
+                                      emit-labels?      (assoc :emit-labels? emit-labels?)
+                                      lookahead         (assoc :lookahead lookahead)
+                                      no-merge?         (assoc :no-merge? no-merge?))})]
+    (git/init-bare! target)
+    (let [final (run-fast-import! plan-val target eph-conn ref
+                                  progress-fn stop?)]
+      {:target      target
+       :commits     (count changes)
+       :last-change (:last-change final)})))
 
 (defn- clone-direct!
   "Clone path for streams whose depot path is queryable directly (mainline,
@@ -269,10 +268,18 @@
 
 (defn- clone-one!
   "Clone a single source into the (already-empty-checked) `target` at
-   `ref`. Dispatches on stream type the same way the single-source
-   `clone!` always has. Marks file is shared at `<target>/clj-p4.marks`,
-   so a multi-stream clone's subsequent imports automatically see prior
-   imports' marks (e.g. for `merge :<C>` parent emission across streams)."
+   `ref`. Marks file is shared at `<target>/clj-p4.marks`, so a
+   multi-stream clone's subsequent imports automatically see prior
+   imports' marks (e.g. for `merge :<C>` parent emission across streams).
+
+   Dispatch (since 0.12.0):
+   - Classic depot path → `clone-via-classic!` (generic ephemeral client).
+   - Stream → ephemeral-client view by default (via
+     `with-stream-client-or-fallback`) — picks up server-side
+     `Components:` resolution and any other view composition the server
+     does that pure-data `effective-view` would miss. Falls back to
+     `clone-direct!` (pure-data parent-chain merge) only if ephemeral
+     client creation fails (e.g. P4 protect table forbids `client -i`)."
   [{:keys [conn target] :as args} source ref]
   (let [{:keys [mode]}     (choose-mode conn)
         {:keys [source-type chain] classic-stream :stream}
@@ -282,9 +289,16 @@
               chain          (assoc :chain chain)
               classic-stream (assoc :classic-stream classic-stream))]
     (cond
-      (= :classic source-type)    (clone-via-classic! ctx)
-      (virtual-leaf? chain)        (clone-via-ephemeral! ctx)
-      :else                        (clone-direct! ctx))))
+      (= :classic source-type)
+      (clone-via-classic! ctx)
+
+      :else
+      (or (p4/with-stream-client-or-fallback
+            conn source
+            (fn [eph-conn {:client/keys [name view-lines]}]
+              (run-ephemeral-import! ctx eph-conn name view-lines))
+            (constantly nil))
+          (clone-direct! ctx)))))
 
 (defn clone!
   "Clone one or more Perforce sources into a new bare git repo at `target`.
@@ -393,30 +407,29 @@
     lookahead         (assoc :lookahead lookahead)
     no-merge?         (assoc :no-merge? no-merge?)))
 
-(defn- sync-via-ephemeral!
-  [{:keys [conn stream target chain mode since exclude
-           ref progress-fn stop?] :as ctx}]
-  (p4/with-ephemeral-client
-    conn stream
-    (fn [eph-conn {:client/keys [name view-lines]}]
-      (let [client-path (str "//" name "/...")
-            view-val    (view/client-view->view view-lines :stream-name stream)
-            new-changes (resolve-changes eph-conn client-path
-                                         {:since (inc since)} mode)]
-        (if (empty? new-changes)
-          (assoc (repo-state target :ref ref) :synced 0)
-          (let [plan-val (plan/sync-plan
-                          {:conn         eph-conn
-                           :stream-chain chain
-                           :changelists  new-changes
-                           :target       target
-                           :view         view-val
-                           :excludes     exclude
-                           :since-change since
-                           :options      (sync-options ctx)})]
-            (run-fast-import! plan-val target eph-conn ref progress-fn stop?)
-            (assoc (repo-state target :ref ref)
-                   :synced (count new-changes))))))))
+(defn- run-ephemeral-sync!
+  "Body of an ephemeral-client sync."
+  [{:keys [stream target chain mode since exclude ref progress-fn stop?]
+    :as   ctx}
+   eph-conn client-name view-lines]
+  (let [client-path (str "//" client-name "/...")
+        view-val    (view/client-view->view view-lines :stream-name stream)
+        new-changes (resolve-changes eph-conn client-path
+                                     {:since (inc since)} mode)]
+    (if (empty? new-changes)
+      (assoc (repo-state target :ref ref) :synced 0)
+      (let [plan-val (plan/sync-plan
+                      {:conn         eph-conn
+                       :stream-chain chain
+                       :changelists  new-changes
+                       :target       target
+                       :view         view-val
+                       :excludes     exclude
+                       :since-change since
+                       :options      (sync-options ctx)})]
+        (run-fast-import! plan-val target eph-conn ref progress-fn stop?)
+        (assoc (repo-state target :ref ref)
+               :synced (count new-changes))))))
 
 (defn- sync-direct!
   [{:keys [conn stream target chain mode since exclude
@@ -478,9 +491,16 @@
                 chain          (assoc :chain chain)
                 classic-stream (assoc :classic-stream classic-stream))]
     (cond
-      (= :classic source-type) (sync-via-classic! ctx)
-      (virtual-leaf? chain)    (sync-via-ephemeral! ctx)
-      :else                    (sync-direct! ctx))))
+      (= :classic source-type)
+      (sync-via-classic! ctx)
+
+      :else
+      (or (p4/with-stream-client-or-fallback
+            conn source
+            (fn [eph-conn {:client/keys [name view-lines]}]
+              (run-ephemeral-sync! ctx eph-conn name view-lines))
+            (constantly nil))
+          (sync-direct! ctx)))))
 
 (defn sync!
   "Bring an existing clj-p4 clone at `target` up to date with the server.
