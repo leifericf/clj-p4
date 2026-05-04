@@ -64,6 +64,20 @@
                  (p4/changes conn (str stream-name "/...")
                              :mode mode :max max-changes :since since))))
 
+(defn- target-status
+  "Classify `target` for `clone!` pre-flight: `:empty` (does not exist
+   or exists as an empty directory), `:clj-p4-clone` (already populated
+   by a clj-p4 / git-p4 clone), or `:not-empty` (exists with arbitrary
+   contents — refuse to overlay)."
+  [target]
+  (let [f (io/file (str target))]
+    (cond
+      (not (.exists f))                       :empty
+      (and (.isDirectory f)
+           (zero? (alength (.list f))))       :empty
+      (clone? target)                         :clj-p4-clone
+      :else                                   :not-empty)))
+
 (defn clone!
   "Clone a Perforce stream into a new bare git repo at `target`.
 
@@ -79,12 +93,29 @@
      :progress-fn  `(fn [op])` — invoked before each op
      :stop?        `(fn [])` — abort predicate
 
-   Returns `{:target :commits :last-change}`."
+   Returns `{:target :commits :last-change}`.
+
+   Refuses to clone into an existing non-empty `target` — either delete
+   it first or, if it is already a clj-p4 clone, call `sync!`."
   [{:keys [conn stream target ref max-changes exclude
            progress-fn stop?]
     :or   {ref         "refs/heads/main"
            progress-fn (fn [_])
            stop?       (constantly false)}}]
+  (case (target-status target)
+    :clj-p4-clone
+    (throw (ex-info (str "clone! target is already a clj-p4 clone: "
+                         target " — use sync! to update it")
+                    {:clj-p4/error :clone-target-is-clone
+                     :target       target}))
+
+    :not-empty
+    (throw (ex-info (str "clone! target is not empty: " target
+                         " — delete it first or choose a fresh path")
+                    {:clj-p4/error :clone-target-not-empty
+                     :target       target}))
+
+    :empty nil)
   (let [{:keys [mode]} (choose-mode conn)
         chain          (p4/stream-chain conn stream :mode mode)
         _              (when (some #(= :virtual (:stream/type %)) chain)

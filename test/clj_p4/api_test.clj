@@ -103,6 +103,47 @@
   (.write ^java.io.OutputStream out
           (.getBytes (str "content " depot-rev "\n") "UTF-8")))
 
+(deftest clone!-refuses-non-empty-target-test
+  (let [d (tmp-dir)
+        target (str (io/file d "repo"))]
+    (try
+      (.mkdirs (io/file target))
+      (spit (io/file target "user-data.txt") "important user content")
+      (with-redefs [p4/info         (constantly info-2024)
+                    p4/stream-chain (constantly [mainline])
+                    p4/changes      (fn [_ _ & _] [{:p4/change 100}])
+                    p4/describe     (constantly (describe-fixture 100))
+                    p4/print-bytes! print-bytes-stub]
+        (is (thrown-with-msg?
+             clojure.lang.ExceptionInfo
+             #"target is not empty"
+             (api/clone! {:conn   {:p4/port "h:1666"}
+                          :stream "//stream/main"
+                          :target target}))))
+      (testing "user file is untouched"
+        (is (= "important user content"
+               (slurp (io/file target "user-data.txt")))))
+      (testing "no bare-repo metadata leaked into the target"
+        (is (not (.isFile (io/file target "HEAD"))))
+        (is (not (.isDirectory (io/file target "objects")))))
+      (finally (rm-rf d)))))
+
+(deftest clone!-allowed-on-empty-target-test
+  (let [d (tmp-dir)
+        target (str (io/file d "fresh-empty-dir"))]
+    (try
+      (.mkdirs (io/file target))
+      (with-redefs [p4/info         (constantly info-2024)
+                    p4/stream-chain (constantly [mainline])
+                    p4/changes      (fn [_ _ & _] [{:p4/change 100}])
+                    p4/describe     (constantly (describe-fixture 100))
+                    p4/print-bytes! print-bytes-stub]
+        (let [result (api/clone! {:conn   {:p4/port "h:1666"}
+                                  :stream "//stream/main"
+                                  :target target})]
+          (is (= 1 (:commits result)))))
+      (finally (rm-rf d)))))
+
 (deftest clone!-end-to-end-test
   (let [d (tmp-dir)]
     (try
