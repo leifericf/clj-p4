@@ -124,21 +124,29 @@
           (try (git/fast-import-close! handle) (catch Exception _))
           (throw t))))))
 
+(defn- last-trailer-message
+  "Body of the most recent commit on `ref` whose message matches the
+   `[git-p4:` trailer prefix. Returns nil if no such commit exists.
+   `git log --grep -E -1` walks history backwards itself, so a manual
+   commit on top of a clj-p4 history doesn't hide the trailer below it."
+  [target ref]
+  (let [{:keys [exit stdout-bytes]}
+        (clj-p4.shell.proc/run!
+         ["git" "-C" (str target) "log" "-1" "-E"
+          "--grep=\\[git-p4:" "--pretty=%B" ref])]
+    (when (and (zero? exit) stdout-bytes)
+      (let [s (String. ^bytes stdout-bytes "UTF-8")]
+        (when-not (str/blank? s) s)))))
+
 (defn repo-state
   "Inspect a clj-p4 clone. Returns
    `{:target :head-sha :commit-count :last-change}`."
   [target & {:keys [ref] :or {ref "refs/heads/main"}}]
-  (let [shas (git/rev-list target ref)
-        msg  (let [{:keys [stdout-bytes]}
-                   (clj-p4.shell.proc/run!
-                    ["git" "-C" (str target) "log" "-1"
-                     "--pretty=%B" ref])]
-               (when stdout-bytes
-                 (String. ^bytes stdout-bytes "UTF-8")))]
+  (let [shas (git/rev-list target ref)]
     {:target       target
      :head-sha     (first shas)
      :commit-count (count shas)
-     :last-change  (change-from-trailer msg)}))
+     :last-change  (change-from-trailer (last-trailer-message target ref))}))
 
 (defn sync!
   "Bring an existing clj-p4 clone at `target` up to date with the server.

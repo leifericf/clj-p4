@@ -18,6 +18,39 @@
       (doseq [c (.listFiles f)] (rm-rf c)))
     (.delete f)))
 
+(deftest repo-state-finds-trailer-behind-non-trailer-head-test
+  (let [d (tmp-dir)
+        target (str d)]
+    (try
+      (git/init-bare! target)
+      (let [h (git/fast-import-start target)]
+        (git/blob! h 1 (.getBytes "a"))
+        (git/emit-commit! h
+                          {:ref "refs/heads/main" :mark 5
+                           :committer {:name "u" :email "u@x"
+                                       :time-ms 0 :tz "+0000"}
+                           :message "first\n\n[git-p4: depot-paths = \"//stream/main/\": change = 5]"
+                           :files [{:op :M :mode "100644" :mark 1 :path "f1"}]})
+        (git/blob! h 2 (.getBytes "b"))
+        (git/emit-commit! h
+                          {:ref "refs/heads/main" :mark 7
+                           :committer {:name "u" :email "u@x"
+                                       :time-ms 1000 :tz "+0000"}
+                           :message "second\n\n[git-p4: depot-paths = \"//stream/main/\": change = 7]"
+                           :from ":5"
+                           :files [{:op :M :mode "100644" :mark 2 :path "f2"}]})
+        (git/blob! h 3 (.getBytes "c"))
+        (git/emit-commit! h
+                          {:ref "refs/heads/main" :mark 99
+                           :committer {:name "u" :email "u@x"
+                                       :time-ms 2000 :tz "+0000"}
+                           :message "manual rebase, no trailer"
+                           :from ":7"
+                           :files [{:op :M :mode "100644" :mark 3 :path "f3"}]})
+        (git/fast-import-close! h))
+      (is (= 7 (:last-change (api/repo-state target))))
+      (finally (rm-rf d)))))
+
 (deftest change-from-trailer-test
   (testing "matches a real git-p4 trailer"
     (is (= 7 (#'api/change-from-trailer
