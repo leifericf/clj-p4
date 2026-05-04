@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.14.0-alpha
+
+Roadmap step 6 of 8 (post-0.8.0): byte-level validation harness. The count + size summary in 0.7.0 catches order-of-magnitude failures; this catches the subtle ones.
+
+### Added
+
+- **`clj-p4.validate/validate-deep!`** walks `ref`'s commits (newest-first; default `refs/heads/main`), samples them (default `:sample 10`; `:sample :all` for every commit), and compares each file's bytes against `p4 print -k <source>/<path>@<change>` for the matching changelist. `-k` (no RCS keyword expansion) so the bytes match what was written at clone time. Returns on **first divergence** rather than after a full pass — a single bad file is already enough evidence to investigate. Returns `{:ok? false :divergence {:commit :path :change :git-sha :p4-sha :git-bytes :p4-bytes} :commits-checked N :files-checked M}`. The digests are SHA-256 hex strings; the raw bytes are exposed too for callers that want to inspect content directly. Sampling defaults to a deterministic evenly-spaced slice (first commit, last commit, intermediates) so a `:sample 10` covers history rather than clustering at one end.
+
+### Notes
+
+- **Many orders of magnitude more expensive than `validate-tip`.** A `:sample :all` deep validation makes one `p4 print -k` per file per commit; that's `O(commits × files-per-commit)` server-side. The harness exists for cases where `validate-tip` flagged a count or size mismatch and the operator needs to find the offending file. For routine sanity-checking, `validate-tip` remains the right call.
+- **Commits without the `[git-p4: ...]` trailer are skipped.** A user's manual commit on top of a clj-p4 history can't be deep-validated against P4 (there's no source change to compare against), and `validate-deep!` simply walks past it. This matches `repo-state`'s behaviour from 0.1.0.
+- **A `bin/validate` Babashka CLI wrapper is deferred to 0.16.0.** The harness is callable directly from a REPL or `clojure -X` today; a thin CLI wrapper rides better with the migration-docs / benchmarks release where the rest of the operator-facing tooling lands.
+
 ## 0.13.0-alpha
 
 Roadmap step 5 of 8 (post-0.8.0): task / sparsedev / sparserel stream support. With auto-view as the source of truth (0.12.0), these stream variants take exactly the same path as mainline / development / release / virtual — no per-type code path needed.

@@ -72,6 +72,84 @@
             (is (= 1 (-> result :p4  :p4/file-count)))))
         (finally (rm-rf d))))))
 
+(deftest validate-deep-agreement-test
+  (testing "validate-deep! returns ok? true when every file matches"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))
+          file-bytes (.getBytes "x" "UTF-8")
+          cl {:p4/change 100 :p4/user "x" :p4/time 0 :p4/desc "one"
+              :p4/stream "//stream/main"
+              :p4/files [{:rev/depot "//stream/main/src/a.txt"
+                          :rev/rev 1 :rev/action :add :rev/type :text
+                          :rev/flags #{} :rev/keyword-flags #{}}]}]
+      (try
+        (with-redefs [p4/info         (constantly info-2024)
+                      p4/stream-chain (constantly [mainline])
+                      p4/changes      (fn [_ _ & _] [{:p4/change 100}])
+                      p4/describe     (constantly cl)
+                      p4/print-bytes! (fn [_ _ out & _]
+                                        (.write ^java.io.OutputStream out
+                                                file-bytes))]
+          (api/clone! {:conn   {:p4/port "h:1666"}
+                       :stream "//stream/main"
+                       :target target}))
+        ;; The deep harness re-runs `p4 print -k` per file. Stub it to
+        ;; return the same bytes the clone wrote; agreement.
+        (with-redefs [p4/print-bytes! (fn [_ _ out & _]
+                                        (.write ^java.io.OutputStream out
+                                                file-bytes))]
+          (let [result (validate/validate-deep!
+                        {:conn   {:p4/port "h:1666"}
+                         :target target
+                         :source "//stream/main"
+                         :sample :all})]
+            (is (:ok? result))
+            (is (= 1 (:commits-checked result)))
+            (is (= 1 (:files-checked result)))))
+        (finally (rm-rf d))))))
+
+(deftest validate-deep-divergence-test
+  (testing "validate-deep! returns first-divergence detail when bytes mismatch"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))
+          orig-bytes (.getBytes "ORIGINAL" "UTF-8")
+          tampered-bytes (.getBytes "TAMPERED" "UTF-8")
+          cl {:p4/change 100 :p4/user "x" :p4/time 0 :p4/desc "one"
+              :p4/stream "//stream/main"
+              :p4/files [{:rev/depot "//stream/main/src/a.txt"
+                          :rev/rev 1 :rev/action :add :rev/type :text
+                          :rev/flags #{} :rev/keyword-flags #{}}]}]
+      (try
+        (with-redefs [p4/info         (constantly info-2024)
+                      p4/stream-chain (constantly [mainline])
+                      p4/changes      (fn [_ _ & _] [{:p4/change 100}])
+                      p4/describe     (constantly cl)
+                      p4/print-bytes! (fn [_ _ out & _]
+                                        (.write ^java.io.OutputStream out
+                                                orig-bytes))]
+          (api/clone! {:conn   {:p4/port "h:1666"}
+                       :stream "//stream/main"
+                       :target target}))
+        ;; Now the deep harness sees DIFFERENT bytes from what was
+        ;; written at clone time (simulating drift / corruption).
+        (with-redefs [p4/print-bytes! (fn [_ _ out & _]
+                                        (.write ^java.io.OutputStream out
+                                                tampered-bytes))]
+          (let [result (validate/validate-deep!
+                        {:conn   {:p4/port "h:1666"}
+                         :target target
+                         :source "//stream/main"
+                         :sample :all})]
+            (is (false? (:ok? result)))
+            (is (= "src/a.txt" (-> result :divergence :path)))
+            (is (= 100 (-> result :divergence :change)))
+            (testing "digests are exposed for triage"
+              (is (string? (-> result :divergence :git-sha)))
+              (is (string? (-> result :divergence :p4-sha)))
+              (is (not= (-> result :divergence :git-sha)
+                        (-> result :divergence :p4-sha))))))
+        (finally (rm-rf d))))))
+
 (deftest validate-tip-disagreement-test
   (testing "validate-tip flags ok? false when sizes disagree"
     (let [d (tmp-dir)
