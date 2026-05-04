@@ -132,3 +132,41 @@
     (is (= "//depot/foo" (:rev/depot (first files))))
     (is (= 3             (:rev/rev   (first files))))
     (is (= #{:ko}        (:rev/keyword-flags (second files))))))
+
+(deftest unparseable-numeric-fields-decode-to-nil-test
+  (testing "non-digit `change` string"
+    (let [cl (ps/parse-changelist {"change" "abc" "user" "x"
+                                   "client" nil  "desc"   "y"
+                                   "status" "submitted"})]
+      (is (nil? (:p4/change cl))
+          "malformed wire numeric must surface as nil, not the raw string")))
+
+  (testing "non-digit `time` string"
+    (let [cl (ps/parse-changelist {"change" "100" "user" "x"
+                                   "client" nil  "desc"   "y"
+                                   "status" "submitted"
+                                   "time"   "garbage"})]
+      (is (nil? (:p4/time cl)))))
+
+  (testing "non-digit `rev` and `fileSize` in flat files-list records"
+    (let [[f] (ps/parse-files-list
+               [{"depotFile" "//d/x" "rev" "abc" "fileSize" "xyz"
+                 "type" "text" "action" "edit"}])]
+      (is (nil? (:rev/rev  f)))
+      (is (nil? (:rev/size f)))))
+
+  (testing "non-digit indexed `rev<n>` / `fileSize<n>` in describe records"
+    (let [cl (ps/parse-describe
+              {"change"     "100"
+               "user"       "u"
+               "client"     "c"
+               "desc"       "d"
+               "status"     "submitted"
+               "depotFile0" "//d/x"
+               "rev0"       "abc"
+               "fileSize0"  "xyz"
+               "type0"      "text"
+               "action0"    "edit"})
+          [f] (:p4/files cl)]
+      (is (nil? (:rev/rev  f)))
+      (is (nil? (:rev/size f))))))

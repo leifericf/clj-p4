@@ -18,20 +18,38 @@
 
 ;; ---------------- Atomic value schemas ----------------
 
+(defn- decode-int-or-nil
+  "Coerce a wire value to a long. Numbers and nil pass through; strings
+   go through `parse-long`, which yields nil for unparseable input.
+   This preserves the pre-V3 `(when (parse-long s))` semantics —
+   downstream code relies on bad numeric wire values surfacing as nil
+   rather than as the raw string. Anything else (rare) passes through
+   unchanged so the schema's predicate can reject it."
+  [v]
+  (cond
+    (number? v) v
+    (string? v) (parse-long v)
+    :else       v))
+
+(def ^:private safe-long
+  "Long-typed schema with a nil-safe wire decoder. Use anywhere a
+   p4 wire value lands as a string of digits."
+  [:int {:decode/string {:enter decode-int-or-nil}}])
+
 (def change
-  "P4 changelist number — positive long. Wire format is a digit string;
-   `mt/string-transformer` covers the decode."
-  [:int {:min 1}])
+  "P4 changelist number — positive long, decoded from a digit string."
+  [:int {:min 1 :decode/string {:enter decode-int-or-nil}}])
 
 (def epoch-ms
   "Epoch milliseconds. Wire format is an epoch-seconds digit string;
-   the schema-local `:decode/string` multiplies by 1000."
+   the decoder multiplies by 1000 and returns nil for unparseable
+   input."
   [:int {:decode/string
          {:enter (fn [v]
                    (cond
                      (number? v) v
-                     (and (string? v) (re-matches #"-?\d+" v))
-                     (* 1000 (parse-long v))
+                     (string? v) (when-let [n (parse-long v)]
+                                   (* 1000 n))
                      :else v))}}])
 
 (def action
@@ -88,9 +106,9 @@
   [:map {:closed false}
    [:rev/depot string?]
    [:rev/action {:optional true} action]
-   [:rev/rev {:optional true} [:int {:min 0}]]
+   [:rev/rev {:optional true} [:maybe safe-long]]
    [:rev/digest {:optional true} string?]
-   [:rev/size {:optional true} [:int {:min 0}]]
+   [:rev/size {:optional true} [:maybe safe-long]]
    [:rev/moved-file {:optional true} string?]
    [:rev/type {:optional true} keyword?]
    [:rev/flags {:optional true} [:set keyword?]]
@@ -137,8 +155,8 @@
    [:p4/server-address [:maybe string?]]
    [:p4/case-handling [:maybe keyword?]]
    [:p4/unicode? {:optional true} unicode-flag]
-   [:p4/server-version-major {:optional true} [:int {:min 1}]]
-   [:p4/server-version-minor {:optional true} [:int {:min 0}]]])
+   [:p4/server-version-major {:optional true} [:maybe safe-long]]
+   [:p4/server-version-minor {:optional true} [:maybe safe-long]]])
 
 ;; ---------------- ConnectionSpec ----------------
 

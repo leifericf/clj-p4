@@ -33,6 +33,12 @@
 
 ### Fixed
 
+- Parser fields typed as longs (`:p4/change`, `:p4/time`, `:rev/rev`,
+  `:rev/size`, `:p4/server-version-major` / `-minor`) decode to nil
+  when the wire string can't be parsed, instead of leaking the raw
+  string into a long-typed field. Restores the pre-V3
+  `(when (parse-long s))` semantics that downstream code in
+  `clj-p4.execute` depends on.
 - `:fetch-parallelism` now actually bounds concurrency. The two parallel
   fetch sites in `clj-p4.execute` (per-changelist `p4 print` and
   merge-source `p4 integrated`/`p4 fstat` lookups) previously used

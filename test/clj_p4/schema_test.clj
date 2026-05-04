@@ -43,9 +43,8 @@
            (m/decode s/epoch-ms "1700000000" s/record-transformer))))
   (testing "already-decoded numbers pass through unchanged"
     (is (= 42 (m/decode s/epoch-ms 42 s/record-transformer))))
-  (testing "non-digit strings pass through unchanged (let validation catch it)"
-    (is (= "garbage"
-           (m/decode s/epoch-ms "garbage" s/record-transformer)))))
+  (testing "non-digit strings decode to nil so downstream null-safe code keeps working"
+    (is (nil? (m/decode s/epoch-ms "garbage" s/record-transformer)))))
 
 (deftest unicode-flag-decoder-test
   (testing "literal 'enabled' decodes to true"
