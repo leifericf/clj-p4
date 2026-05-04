@@ -83,14 +83,23 @@
 
 (defn stream-chain
   "Walk a stream's parent chain via repeated `p4 stream -o`. Returns a
-   parent-first vector of StreamSpecs (oldest ancestor first)."
+   parent-first vector of StreamSpecs (oldest ancestor first).
+
+   Throws `ex-info` with `:clj-p4/error :stream-chain-cycle` if the
+   server reports a cyclic Parent — defensive against malformed metadata
+   that would otherwise loop forever and run unbounded RPCs."
   [conn stream-name & {:keys [mode] :or {mode :G}}]
-  (loop [name stream-name, acc ()]
-    (let [s (stream-spec conn name :mode mode)
+  (loop [name stream-name, acc (), seen #{}]
+    (when (contains? seen name)
+      (throw (ex-info (str "stream chain cycle detected at " name)
+                      {:clj-p4/error :stream-chain-cycle
+                       :cycle-at      name
+                       :seen          seen})))
+    (let [s      (stream-spec conn name :mode mode)
           parent (:stream/parent s)]
       (if (or (nil? parent) (str/blank? parent) (= "none" parent))
         (vec (cons s acc))
-        (recur parent (cons s acc))))))
+        (recur parent (cons s acc) (conj seen name))))))
 
 (defn changes
   "`p4 changes -l <path>` → seq of ChangelistRecord (without files).

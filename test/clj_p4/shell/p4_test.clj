@@ -108,6 +108,32 @@
         (is (= 1    (:p4/server-version-minor info)))
         (is (true?  (:p4/unicode? info)))))))
 
+(deftest stream-chain-detects-cycle-test
+  (testing "throws ex-info on a cyclic parent chain instead of looping forever"
+    (let [calls (atom 0)
+          ;; A's parent is B; B's parent is A.
+          records {"//s/A" (marshal-record [["Stream"  "//s/A"]
+                                            ["Parent"  "//s/B"]
+                                            ["Type"    "development"]
+                                            ["Options" ""]])
+                   "//s/B" (marshal-record [["Stream"  "//s/B"]
+                                            ["Parent"  "//s/A"]
+                                            ["Type"    "development"]
+                                            ["Options" ""]])}
+          run-stub (fn [argv & _]
+                     (swap! calls inc)
+                     ;; Defensive: bail out if the loop is unbounded.
+                     (when (> @calls 64)
+                       (throw (ex-info "test runaway: stream-chain looped > 64 calls" {})))
+                     {:exit 0
+                      :stdout-bytes (get records (last argv))
+                      :stderr "" :elapsed-ms 1})]
+      (with-redefs [proc/run-checked! run-stub]
+        (is (thrown-with-msg?
+             clojure.lang.ExceptionInfo
+             #"(?i)cycle"
+             (p4/stream-chain {:p4/port "h:1666"} "//s/A")))))))
+
 (deftest stream-chain-walks-parent-test
   (let [calls (atom 0)
         records [(marshal-record [["Stream" "//stream/leaf"]
