@@ -6,7 +6,7 @@
    - `decode-json-records`     — line-delimited JSON of `p4 -Mj` (server ≥ 2024.1).
 
    Both produce a lazy seq of string-keyed Clojure maps, ready for
-   `clj-p4.parse.semantic`. JVM-only — JSON path uses `clojure.data.json`,
+   `clj-p4.parse.semantic`. JSON path uses `clojure.data.json`; the
    marshal path is a hand-rolled byte decoder."
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]

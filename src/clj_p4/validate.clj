@@ -12,9 +12,7 @@
      the source depot path at the matching changelist. Returns on
      first divergence with the offending commit, path, and digests.
      Many-orders-of-magnitude more expensive RPC-wise; the right tool
-     when `validate-tip` flagged a mismatch and you need to find it.
-
-   JVM-only."
+     when `validate-tip` flagged a mismatch and you need to find it."
   (:require [clj-p4.api :as api]
             [clj-p4.shell.p4 :as p4]
             [clj-p4.shell.proc :as proc]

@@ -27,7 +27,7 @@ A read-direction (Perforce → Git) feature comparison as of v0.15.0-alpha. Both
 | **Locked-down ephemeral clients** | ✅ `Options: noallwrite noclobber locked` enforced server-side | ❌ |
 | **Submit-back-to-P4 (write direction)** | ❌ Permanently out of scope by design | ❌ |
 | **Native libp4api bindings** | ❌ Subprocess overhead is the cost of portability | ✅ |
-| **Pure-Clojure runtime** | ✅ JVM, Babashka, ClojureScript-Node for the pure layer | ❌ C++ |
+| **Implementation language** | Clojure (JVM) | C++ |
 
 ## Why the per-knob differences
 
@@ -39,4 +39,4 @@ The differences below the line aren't accidents — they reflect different desig
 
 - **The safety posture is intentional.** p4-fusion is a fast importer with no built-in restrictions on the underlying client; if the operator pointed it at a writable client and a buggy patch landed, theoretically nothing prevents a stray write. clj-p4's runtime allowlist + locked-down ephemeral clients make depot mutation a server-rejected operation, not a "trust the operator" matter. The cost is a few extra round trips at clone time; the benefit is a tool that can't write back even by accident.
 
-- **Native vs. portable.** clj-p4 will be slower than p4-fusion on a like-for-like clone — subprocess overhead dominates per-call time. The trade is portability across JVM, Babashka, and (for the pure layer) ClojureScript-Node, plus an audit-friendly read-only enforcement layer in the same language as the rest of the tool.
+- **Native vs. JVM Clojure.** clj-p4 will be slower than p4-fusion on a like-for-like clone — subprocess overhead dominates per-call time. The trade is an audit-friendly read-only enforcement layer in the same language as the rest of the tool, plus the Clojure ecosystem for downstream tooling.

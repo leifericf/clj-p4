@@ -5,9 +5,7 @@
 
    The connection spec governs `-p`/`-u`/`-c`/`-C` argv assembly. Wire mode
    (`-G` vs `-Mj`) is selectable; auto-detection is the responsibility of
-   the orchestration layer (call `info` first, then choose).
-
-   JVM-only."
+   the orchestration layer (call `info` first, then choose)."
   (:require [clj-p4.parse.marshal :as marshal]
             [clj-p4.parse.semantic :as ps]
             [clj-p4.shell.proc :as proc]

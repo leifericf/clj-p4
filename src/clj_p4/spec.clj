@@ -1,8 +1,8 @@
 (ns clj-p4.spec
   "Predicates and validators on the library's data shapes.
 
-   Pure: no I/O, runs anywhere `.cljc` runs. The shapes themselves are documented
-   in the project plan; this namespace is the authoritative gatekeeper."
+   Pure: no I/O. The shapes themselves are documented in the project
+   plan; this namespace is the authoritative gatekeeper."
   (:require [clojure.string :as str]))
 
 (def ^:private depot-name-re #"[A-Za-z0-9_][A-Za-z0-9_.\-]*")

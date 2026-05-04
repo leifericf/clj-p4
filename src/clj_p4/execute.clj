@@ -2,9 +2,7 @@
   "Reduce a `clj-p4.plan` op-seq into a populated bare git repo.
 
    This is the only mutable layer. Every other namespace returns plain
-   data; `execute!` is where blobs hit disk and commits become refs.
-
-   JVM-only."
+   data; `execute!` is where blobs hit disk and commits become refs."
   (:require [clj-p4.plan :as plan]
             [clj-p4.shell.git :as git]
             [clj-p4.shell.p4 :as p4]

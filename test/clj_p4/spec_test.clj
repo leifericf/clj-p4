@@ -60,7 +60,7 @@
 
 (deftest validate-depot-path!-test
   (is (= "//depot/foo" (spec/validate-depot-path! "//depot/foo")))
-  (is (thrown? #?(:clj clojure.lang.ExceptionInfo :cljs js/Error)
+  (is (thrown? clojure.lang.ExceptionInfo
                (spec/validate-depot-path! "no good"))))
 
 (deftest connection-spec?-test

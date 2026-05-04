@@ -2,7 +2,7 @@
   "Stream view composition: parent-chain inheritance, Paths/Remapped/Ignored
    handling, glob compilation, and depot → local-path mapping.
 
-   This is the value-add over `git-p4`. Pure `.cljc`."
+   This is the value-add over `git-p4`. Pure data layer."
   (:require [clojure.string :as str]))
 
 (defn- regex-escape [s]

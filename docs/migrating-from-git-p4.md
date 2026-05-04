@@ -33,7 +33,7 @@ If you have a `git-p4`-shaped clone today and you're considering `clj-p4`, this 
 ## What `git-p4` does that `clj-p4` does not
 
 - **Submit-back to P4** (`git p4 submit`). Permanently out of scope for `clj-p4` — see the runtime allowlist. If you need round-trip git → P4, `clj-p4` is not the right tool.
-- **Live in the standard `git` distribution.** `clj-p4` is a separate library; you need a JVM and Clojure tooling. The pure layer also runs under Babashka and ClojureScript-Node, but the import itself is JVM-only.
+- **Live in the standard `git` distribution.** `clj-p4` is a separate library; you need a JVM and Clojure tooling.
 
 ## Resuming an existing `git-p4` clone with `clj-p4`
 

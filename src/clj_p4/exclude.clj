@@ -11,7 +11,7 @@
    - P4 `...`       — `foo/...` recursive subtree
    - P4 `*` and `%n` — same semantics as in `clj-p4.view`
 
-   Pure `.cljc`."
+   Pure data layer."
   (:require [clojure.string :as str]
             [clj-p4.view :as view]))
 

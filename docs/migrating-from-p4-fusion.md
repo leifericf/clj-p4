@@ -33,7 +33,7 @@ If you're choosing between them, this document maps the configuration knobs and 
 - **P4 user → real name + email.** `:user-map` lets you map P4 usernames to git author names + emails. `p4-fusion` uses the raw P4 username everywhere.
 - **P4 labels → annotated git tags.** `:emit-labels?` walks `p4 labels` after the import and emits a tag for any label whose `Revision:` resolves to an imported CL. `p4-fusion` does not.
 - **First-class validation harnesses.** `validate-tip` for fast count + size sanity-check; `validate-deep!` for byte-level comparison with first-divergence reporting. `p4-fusion` ships no equivalents.
-- **Pure-Clojure runtime.** The pure layer (depot-path validation, view composition, exclude rules, plan generation) runs under JVM, Babashka, and ClojureScript-Node. The import itself is JVM-only, but the data shapes are inspectable from any of those.
+- **Pure-Clojure implementation.** Every layer is Clojure (JVM); the data shapes (depot-path validation, view composition, exclude rules, plan operations) are inspectable values rather than C++ internals.
 
 ## What `p4-fusion` does that `clj-p4` does not
 

@@ -3,7 +3,7 @@
 
    Each takes the data it needs explicitly — no opts god-map. Side effects
    delegated to `clj-p4.shell.*`; orchestration delegated to
-   `clj-p4.execute`. JVM-only."
+   `clj-p4.execute`."
   (:require [clj-p4.execute :as execute]
             [clj-p4.plan :as plan]
             [clj-p4.shell.git :as git]
