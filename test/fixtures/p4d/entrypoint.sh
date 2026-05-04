@@ -40,8 +40,13 @@ Email: ${P4USER}@example.com
 FullName: clj-p4 admin
 EOF
 
-    # Set a password.
-    yes "${P4PASSWD}" | p4 -p "tcp:localhost:${P4PORT}" -u "${P4USER}" passwd
+    # Set a password. Use a heredoc — `yes | passwd` makes pipefail explode
+    # with SIGPIPE on the producer side once passwd has read the two lines
+    # it needs.
+    p4 -p "tcp:localhost:${P4PORT}" -u "${P4USER}" passwd <<EOF
+${P4PASSWD}
+${P4PASSWD}
+EOF
 
     # Run the seed script if present.
     if [[ -x /usr/local/bin/seed.sh ]]; then

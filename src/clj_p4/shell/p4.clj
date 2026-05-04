@@ -49,8 +49,13 @@
       :G  (marshal/decode-marshal-records is)
       :Mj (marshal/decode-json-records is))))
 
-(defn- with-mode-flag [mode]
-  (case mode :G ["-G"] :Mj ["-Mj"]))
+(defn- with-mode-flag
+  "Mode flag to send to `p4` so its output uses tagged record form.
+   `-G` is Python marshal (field-by-field). `-Mj -ztag` is JSON
+   (field-by-field) — `-Mj` alone gives command-output form, not records,
+   so `-ztag` is mandatory."
+  [mode]
+  (case mode :G ["-G"] :Mj ["-Mj" "-ztag"]))
 
 (defn p4-available?
   "True if a `p4` binary is on PATH and answers `p4 -V` cleanly. Cheap
@@ -110,31 +115,31 @@
       ps/parse-describe))
 
 (defn print-bytes!
-  "`p4 print -q -o - <depot-path>@<rev>` → raw file bytes streamed to
-   `out-stream`. The `-q` skips the header and `-o -` writes to stdout.
-   No `-G`/`-Mj` here — file content is binary and consumed directly.
+  "`p4 print -q <depot-path>@<rev>` → raw file bytes written to
+   `out-stream`. `-q` skips the header. No `-G`/`-Mj` here — file content
+   is binary and consumed directly.
 
    `+k`/`+ko` keyword-flagged files: callers should pass
    `:keyword-expand? false` to use `-k` (no expansion) so the same bytes
-   round-trip on subsequent syncs without re-dirtying."
+   round-trip on subsequent syncs without re-dirtying.
+
+   Uses one-shot `run!` rather than `stream!` because `p4 print` does not
+   read stdin; an `:in :stream` pipe would never be closed and the
+   subprocess could block on its parent's EOF."
   [conn depot-rev out-stream & {:keys [keyword-expand?]
                                 :or   {keyword-expand? true}}]
-  (let [argv (cond-> (concat ["p4"] (conn-args conn)
-                             ["print" "-q" "-o" "-"])
-               (not keyword-expand?) (concat ["-k"])
-               true                   (concat [depot-rev]))
+  (let [argv (cond-> (into ["p4"] (conn-args conn))
+               true                   (into ["print" "-q"])
+               (not keyword-expand?)  (conj "-k")
+               true                   (conj depot-rev))
         env  (env-with-ticket conn)
-        handle (proc/stream! (vec argv) {:env env})]
-    (try
-      (clojure.java.io/copy (:out handle) out-stream)
-      (let [{:keys [exit stderr]} (proc/stream-close! handle)]
-        (when-not (zero? exit)
-          (throw (ex-info (str "p4 print failed: " (str/trim stderr))
-                          {:clj-p4/error :p4-print-failed
-                           :depot-rev    depot-rev
-                           :exit         exit
-                           :stderr       stderr})))
-        {:depot-rev depot-rev :exit exit})
-      (catch Throwable t
-        (try (proc/stream-close! handle) (catch Exception _))
-        (throw t)))))
+        {:keys [exit stdout-bytes stderr]}
+        (proc/run! argv {:env env :timeout-ms (:p4/timeout-ms conn)})]
+    (when-not (zero? exit)
+      (throw (ex-info (str "p4 print failed: " (str/trim (or stderr "")))
+                      {:clj-p4/error :p4-print-failed
+                       :depot-rev    depot-rev
+                       :exit         exit
+                       :stderr       stderr})))
+    (.write ^java.io.OutputStream out-stream ^bytes stdout-bytes)
+    {:depot-rev depot-rev :exit exit :bytes-written (alength ^bytes stdout-bytes)}))

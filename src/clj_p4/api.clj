@@ -91,7 +91,7 @@
                          :options      {:max-changes max-changes
                                         :checkpoint-every 1000}})]
     (git/init-bare! target)
-    (let [marks-file (str (io/file target ".." "clj-p4.marks"))
+    (let [marks-file (str (io/file target "clj-p4.marks"))
           handle     (git/fast-import-start target {:marks-file marks-file})]
       (try
         (let [final (execute/execute! plan-val
@@ -159,7 +159,7 @@
                          :excludes     exclude
                          :since-change since
                          :options      {:checkpoint-every 1000}})
-            marks-file (str (io/file target ".." "clj-p4.marks"))
+            marks-file (str (io/file target "clj-p4.marks"))
             handle     (git/fast-import-start target {:marks-file marks-file})]
         (try
           (let [final (execute/execute! plan-val

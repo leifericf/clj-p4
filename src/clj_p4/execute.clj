@@ -86,17 +86,19 @@
                  (inc i) (rest fs))))
       out)))
 
-(def ^:private p4-trailer
-  "Format the git-p4-compatible commit trailer."
-  (fn [{:p4/keys [change stream]}]
-    (str "[git-p4: depot-paths = \"" stream "/\": change = " change "]")))
+(defn- p4-trailer
+  "Format the git-p4-compatible commit trailer. Uses the stream name the
+   plan was built with — `parse-changelist` cannot populate `:p4/stream`
+   reliably because some `p4 describe` outputs omit it."
+  [stream-name {:p4/keys [change]}]
+  (str "[git-p4: depot-paths = \"" stream-name "/\": change = " change "]"))
 
 (defn- commit-message
-  [cl]
+  [stream-name cl]
   (let [desc (str/trim (or (:p4/desc cl) ""))]
     (if (str/blank? desc)
-      (p4-trailer cl)
-      (str desc "\n\n" (p4-trailer cl)))))
+      (p4-trailer stream-name cl)
+      (str desc "\n\n" (p4-trailer stream-name cl)))))
 
 (defn- committer-of
   [cl]
@@ -106,13 +108,13 @@
    :tz      "+0000"})
 
 (defn- emit-change!
-  [{:keys [git-handle ref last-change] :as ctx} change-num]
+  [{:keys [git-handle ref last-change stream-name] :as ctx} change-num]
   (let [cl     (p4/describe (:conn ctx) change-num)
         ops    (file-ops-for-change ctx cl)
         commit {:ref       ref
                 :mark      (:p4/change cl)
                 :committer (committer-of cl)
-                :message   (commit-message cl)
+                :message   (commit-message stream-name cl)
                 :files     ops}
         commit (cond-> commit
                  last-change (assoc :from (str ":" last-change)))]
@@ -137,6 +139,7 @@
    :view        (:plan/view plan)
    :excludes    (:plan/excludes plan)
    :target      (:plan/target plan)
+   :stream-name (:stream/name (:plan/stream plan))
    :ref         (or ref "refs/heads/main")
    :last-change (when (= :sync (:plan/kind plan))
                   (:plan/since-change plan))})

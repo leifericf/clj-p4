@@ -24,6 +24,7 @@ Parent: none
 Type: mainline
 Description: mainline stream for clj-p4 fixtures
 Options: allsubmit unlocked toparent fromparent mergedown
+ParentView: noinherit
 Paths:
         share ...
 EOF
@@ -36,6 +37,7 @@ Parent: //stream/main
 Type: development
 Description: development child of main
 Options: allsubmit unlocked toparent fromparent mergedown
+ParentView: inherit
 Paths:
         share ...
 EOF
@@ -48,6 +50,7 @@ Parent: //stream/main
 Type: release
 Description: release child of main
 Options: allsubmit unlocked toparent fromparent mergedown
+ParentView: inherit
 Paths:
         share ...
 EOF
@@ -59,7 +62,8 @@ Name: virtual
 Parent: //stream/main
 Type: virtual
 Description: virtual stream — clj-p4 should refuse to clone this
-Options: allsubmit unlocked toparent fromparent notparent
+Options: allsubmit unlocked notoparent nofromparent mergedown
+ParentView: inherit
 Paths:
         share src/...
 EOF
