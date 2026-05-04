@@ -57,7 +57,7 @@
                                         (.write ^java.io.OutputStream out
                                                 file-bytes))]
           (api/clone! {:conn   {:p4/port "h:1666"}
-                       :stream "//stream/main"
+                       :source "//stream/main"
                        :target target}))
         (with-redefs [p4/sizes-summary (fn [_ _ & _]
                                          {:p4/file-count 1
@@ -91,7 +91,7 @@
                                         (.write ^java.io.OutputStream out
                                                 file-bytes))]
           (api/clone! {:conn   {:p4/port "h:1666"}
-                       :stream "//stream/main"
+                       :source "//stream/main"
                        :target target}))
         ;; The deep harness re-runs `p4 print -k` per file. Stub it to
         ;; return the same bytes the clone wrote; agreement.
@@ -128,7 +128,7 @@
                                         (.write ^java.io.OutputStream out
                                                 orig-bytes))]
           (api/clone! {:conn   {:p4/port "h:1666"}
-                       :stream "//stream/main"
+                       :source "//stream/main"
                        :target target}))
         ;; Now the deep harness sees DIFFERENT bytes from what was
         ;; written at clone time (simulating drift / corruption).
@@ -168,7 +168,7 @@
                                         (.write ^java.io.OutputStream out
                                                 (.getBytes "x" "UTF-8")))]
           (api/clone! {:conn   {:p4/port "h:1666"}
-                       :stream "//stream/main"
+                       :source "//stream/main"
                        :target target}))
         (with-redefs [p4/sizes-summary (fn [_ _ & _]
                                          {:p4/file-count 7    ; lies

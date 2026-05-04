@@ -259,15 +259,6 @@
         segs     (remove str/blank? (str/split stripped #"/"))]
     (str "refs/heads/" (last segs))))
 
-(defn- warn-deprecated-key!
-  "Emit a single deprecation line to stderr (one per `clone!` / `sync!`
-   call — not per changelist; see the docstring on `clone!`)."
-  [fn-name old-key new-key]
-  (binding [*out* *err*]
-    (println (str "clj-p4: WARNING — `" old-key "` on `" fn-name
-                  "` is deprecated; use `" new-key "` instead. "
-                  "Both will be accepted through the 0.15.x line."))))
-
 (defn- clone-one!
   "Clone a single source into the (already-empty-checked) `target` at
    `ref`. Marks file is shared at `<target>/clj-p4.marks`, so a
@@ -348,15 +339,9 @@
    Virtual streams and classic depot paths are both routed through an
    auto-managed, locked-down ephemeral client (`Options: noallwrite
    noclobber locked`). The `git-p4:` trailer always carries the
-   user-supplied source path, not the ephemeral client name.
-
-   `:stream`, `:streams`, and `:stream->ref` are still accepted as
-   deprecated aliases (with a one-line stderr warning per call); both
-   forms work through the 0.15.x line. They will be removed in a
-   future release."
+   user-supplied source path, not the ephemeral client name."
   [{:keys [conn target ref
            source sources source->ref
-           stream streams stream->ref
            max-changes exclude
            fetch-parallelism max-print-bytes user-map emit-labels?
            lookahead no-merge? progress-fn stop?]
@@ -364,32 +349,25 @@
            progress-fn (fn [_])
            stop?       (constantly false)}
     :as   args}]
-  (when stream      (warn-deprecated-key! "clone!" :stream :source))
-  (when streams     (warn-deprecated-key! "clone!" :streams :sources))
-  (when stream->ref (warn-deprecated-key! "clone!" :stream->ref :source->ref))
-  (let [source       (or source stream)
-        sources      (or sources streams)
-        source->ref  (or source->ref stream->ref)]
-    (when (and source sources)
-      (throw (ex-info ":source and :sources are mutually exclusive on clone!"
-                      {:clj-p4/error :source-and-sources-set
-                       :source  source
-                       :sources sources})))
-    (when-not (or source sources)
-      (throw (ex-info "clone! needs :source or :sources"
-                      {:clj-p4/error :no-source})))
-    (assert-target-empty! target)
-    (let [base (-> args
-                   (dissoc :stream :streams :stream->ref
-                           :source :sources :source->ref :ref)
-                   (assoc :progress-fn progress-fn :stop? stop?))]
-      (if sources
-        (mapv (fn [src]
-                (let [src-ref (or (get source->ref src)
-                                  (default-ref-of-source src))]
-                  (clone-one! base src src-ref)))
-              sources)
-        (clone-one! base source ref)))))
+  (when (and source sources)
+    (throw (ex-info ":source and :sources are mutually exclusive on clone!"
+                    {:clj-p4/error :source-and-sources-set
+                     :source  source
+                     :sources sources})))
+  (when-not (or source sources)
+    (throw (ex-info "clone! needs :source or :sources"
+                    {:clj-p4/error :no-source})))
+  (assert-target-empty! target)
+  (let [base (-> args
+                 (dissoc :source :sources :source->ref :ref)
+                 (assoc :progress-fn progress-fn :stop? stop?))]
+    (if sources
+      (mapv (fn [src]
+              (let [src-ref (or (get source->ref src)
+                                (default-ref-of-source src))]
+                (clone-one! base src src-ref)))
+            sources)
+      (clone-one! base source ref))))
 
 (defn- last-trailer-message
   "Body of the most recent commit on `ref` whose message matches the
@@ -531,13 +509,9 @@
 
    Optional: same as `clone!`. Virtual streams and classic depot paths
    are routed through the same auto-managed ephemeral-client path as
-   `clone!`.
-
-   `:stream`, `:streams`, and `:stream->ref` are still accepted as
-   deprecated aliases through the 0.15.x line."
+   `clone!`."
   [{:keys [conn target ref
            source sources source->ref
-           stream streams stream->ref
            exclude
            fetch-parallelism max-print-bytes user-map lookahead no-merge?
            progress-fn stop?]
@@ -545,28 +519,21 @@
            progress-fn (fn [_])
            stop?       (constantly false)}
     :as   args}]
-  (when stream      (warn-deprecated-key! "sync!" :stream :source))
-  (when streams     (warn-deprecated-key! "sync!" :streams :sources))
-  (when stream->ref (warn-deprecated-key! "sync!" :stream->ref :source->ref))
-  (let [source       (or source stream)
-        sources      (or sources streams)
-        source->ref  (or source->ref stream->ref)]
-    (when (and source sources)
-      (throw (ex-info ":source and :sources are mutually exclusive on sync!"
-                      {:clj-p4/error :source-and-sources-set
-                       :source  source
-                       :sources sources})))
-    (when-not (or source sources)
-      (throw (ex-info "sync! needs :source or :sources"
-                      {:clj-p4/error :no-source})))
-    (let [base (-> args
-                   (dissoc :stream :streams :stream->ref
-                           :source :sources :source->ref :ref)
-                   (assoc :progress-fn progress-fn :stop? stop?))]
-      (if sources
-        (mapv (fn [src]
-                (let [src-ref (or (get source->ref src)
-                                  (default-ref-of-source src))]
-                  (sync-one! base src src-ref)))
-              sources)
-        (sync-one! base source ref)))))
+  (when (and source sources)
+    (throw (ex-info ":source and :sources are mutually exclusive on sync!"
+                    {:clj-p4/error :source-and-sources-set
+                     :source  source
+                     :sources sources})))
+  (when-not (or source sources)
+    (throw (ex-info "sync! needs :source or :sources"
+                    {:clj-p4/error :no-source})))
+  (let [base (-> args
+                 (dissoc :source :sources :source->ref :ref)
+                 (assoc :progress-fn progress-fn :stop? stop?))]
+    (if sources
+      (mapv (fn [src]
+              (let [src-ref (or (get source->ref src)
+                                (default-ref-of-source src))]
+                (sync-one! base src src-ref)))
+            sources)
+      (sync-one! base source ref))))

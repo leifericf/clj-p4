@@ -135,7 +135,7 @@
              clojure.lang.ExceptionInfo
              #"target is not empty"
              (api/clone! {:conn   {:p4/port "h:1666"}
-                          :stream "//stream/main"
+                          :source "//stream/main"
                           :target target}))))
       (testing "user file is untouched"
         (is (= "important user content"
@@ -156,7 +156,7 @@
                     p4/describe     (constantly (describe-fixture 100))
                     p4/print-bytes! print-bytes-stub]
         (let [result (api/clone! {:conn   {:p4/port "h:1666"}
-                                  :stream "//stream/main"
+                                  :source "//stream/main"
                                   :target target})]
           (is (= 1 (:commits result)))))
       (finally (rm-rf d)))))
@@ -175,7 +175,7 @@
               progress (atom [])
               {:keys [commits last-change]}
               (api/clone! {:conn   {:p4/port "h:1666"}
-                           :stream "//stream/main"
+                           :source "//stream/main"
                            :target target
                            :progress-fn #(swap! progress conj %)})]
           (is (= 3 commits))
@@ -253,7 +253,7 @@
                     p4/describe             (fn [_ n] (describe-virtual-fixture n))
                     p4/print-bytes!         print-bytes-stub]
         (let [result (api/clone! {:conn   {:p4/port "h:1666"}
-                                  :stream "//stream/virt"
+                                  :source "//stream/virt"
                                   :target target})]
           (is (= 2 (:commits result)))
           (is (= 101 (:last-change result)))
@@ -314,7 +314,7 @@
                                                  :rev/keyword-flags #{}}]})
                       p4/print-bytes!       print-bytes-stub]
           (let [result (api/clone! {:conn   {:p4/port "h:1666"}
-                                    :stream "//depot/main"
+                                    :source "//depot/main"
                                     :target target})]
             (is (= 1 (:commits result)))
             (testing "trailer references the user-supplied depot path"
@@ -349,7 +349,7 @@
           (is (thrown-with-msg?
                clojure.lang.ExceptionInfo #"boom"
                (api/clone! {:conn   {:p4/port "h:1666"}
-                            :stream "//stream/virt"
+                            :source "//stream/virt"
                             :target target})))
           (is @cleanup-called?))
         (finally (rm-rf d))))))
@@ -374,7 +374,7 @@
                     p4/print-bytes! print-bytes-stub]
         (let [target (str (io/file d "repo"))]
           (api/clone! {:conn    {:p4/port "h:1666"}
-                       :stream  "//stream/main"
+                       :source  "//stream/main"
                        :target  target
                        :exclude ex})
           (let [{:keys [stdout-bytes]}
@@ -413,7 +413,7 @@
                       p4/print-bytes! print-bytes-stub]
           (let [target (str (io/file d "repo"))]
             (api/clone! {:conn   {:p4/port "h:1666"}
-                         :stream "//stream/main"
+                         :source "//stream/main"
                          :target target})
             (testing "tree shows src/new.txt and not src/old.txt"
               (let [{:keys [stdout-bytes]}
@@ -452,7 +452,7 @@
                     p4/print-bytes! print-bytes-stub]
         (let [target (str (io/file d "repo"))]
           (api/clone! {:conn   {:p4/port "h:1666"}
-                       :stream "//stream/main"
+                       :source "//stream/main"
                        :target target})
           (is (= 2 (git/commit-count target "refs/heads/main")))
           (let [{:keys [stdout-bytes]}
@@ -473,7 +473,7 @@
                     p4/print-bytes! print-bytes-stub]
         (let [target (str (io/file d "repo"))]
           (api/clone! {:conn {:p4/port "h:1666"}
-                       :stream "//stream/main" :target target})
+                       :source "//stream/main" :target target})
           (let [s (api/repo-state target)]
             (is (= 2 (:commit-count s)))
             (is (= 101 (:last-change s)))
@@ -502,7 +502,7 @@
                                                 (.getBytes (str "x " rev) "UTF-8")))]
           (let [target (str (io/file d "repo"))]
             (api/clone! {:conn   {:p4/port "h:1666"}
-                         :stream "//stream/main"
+                         :source "//stream/main"
                          :target target
                          :fetch-parallelism 4})
             (is (= n-files @calls))
@@ -530,7 +530,7 @@
                  clojure.lang.ExceptionInfo
                  #"max-print-bytes"
                  (api/clone! {:conn   {:p4/port "h:1666"}
-                              :stream "//stream/main"
+                              :source "//stream/main"
                               :target target
                               :max-print-bytes 100})))))
         (finally (rm-rf d))))))
@@ -546,7 +546,7 @@
                       p4/print-bytes! print-bytes-stub]
           (let [target (str (io/file d "repo"))]
             (api/clone! {:conn   {:p4/port "h:1666"}
-                         :stream "//stream/main"
+                         :source "//stream/main"
                          :target target
                          :user-map {"alice" {:name "Alice Engineer"
                                              :email "alice@example.test"}}})
@@ -569,7 +569,7 @@
                       p4/print-bytes! print-bytes-stub]
           (let [target (str (io/file d "repo"))]
             (api/clone! {:conn   {:p4/port "h:1666"}
-                         :stream "//stream/main"
+                         :source "//stream/main"
                          :target target
                          :user-map {"bob" {:name "Bob"}}})
             (let [{:keys [stdout-bytes]}
@@ -602,7 +602,7 @@
                                                      :label/desc "out of range"}))]
           (let [target (str (io/file d "repo"))]
             (api/clone! {:conn   {:p4/port "h:1666"}
-                         :stream "//stream/main"
+                         :source "//stream/main"
                          :target target
                          :emit-labels? true})
             (testing "v1 became an annotated tag"
@@ -650,7 +650,7 @@
                       p4/describe     stub-describe
                       p4/print-bytes! print-bytes-stub]
           (api/clone! {:conn   {:p4/port "h:1666"}
-                       :stream "//stream/main"
+                       :source "//stream/main"
                        :target target
                        :lookahead 2}))
         (let [evs       @events
@@ -685,7 +685,7 @@
                       p4/describe     stub-describe
                       p4/print-bytes! print-bytes-stub]
           (api/clone! {:conn   {:p4/port "h:1666"}
-                       :stream "//stream/main"
+                       :source "//stream/main"
                        :target target}))
         (is (= [[:start 100] [:end 100] [:start 101] [:end 101]]
                @events))
@@ -743,7 +743,7 @@
                       p4/integrated   integrated-stub
                       p4/fstat        fstat-stub]
           (api/clone! {:conn   {:p4/port "h:1666"}
-                       :stream "//stream/main"
+                       :source "//stream/main"
                        :target target}))
         (testing "the integrate commit has 2 parents"
           (let [{:keys [stdout-bytes]}
@@ -784,7 +784,7 @@
                       ;; which is not in `imported?`'s set.
                       p4/fstat        (fn [_ _] {:fstat/head-change 999})]
           (api/clone! {:conn   {:p4/port "h:1666"}
-                       :stream "//stream/main"
+                       :source "//stream/main"
                        :target target}))
         (testing "the integrate commit has 1 parent (linear)"
           (let [{:keys [stdout-bytes]}
@@ -821,7 +821,7 @@
                                         (reset! integ-called? true) [])
                       p4/fstat        (fn [_ _] {:fstat/head-change 100})]
           (api/clone! {:conn   {:p4/port "h:1666"}
-                       :stream "//stream/main"
+                       :source "//stream/main"
                        :target target
                        :no-merge? true}))
         (testing "p4/integrated never called"
@@ -845,8 +845,8 @@
    :stream/remapped []
    :stream/ignored  []})
 
-(deftest multi-stream-clones-into-separate-refs-test
-  (testing ":streams [a b] produces two refs in one bare repo"
+(deftest multi-source-clones-into-separate-refs-test
+  (testing ":sources [a b] produces two refs in one bare repo"
     (let [d (tmp-dir)
           target (str (io/file d "repo"))
           ;; Each stream returns a different parent chain so we know
@@ -878,7 +878,7 @@
                       p4/describe     describe-stub
                       p4/print-bytes! print-bytes-stub]
           (let [result (api/clone! {:conn   {:p4/port "h:1666"}
-                                    :streams ["//stream/main" "//stream/dev"]
+                                    :sources ["//stream/main" "//stream/dev"]
                                     :target  target})]
             (is (vector? result))
             (is (= 2 (count result)))
@@ -916,8 +916,8 @@
                           :target target})))
         (finally (rm-rf d))))))
 
-(deftest stream-ref-override-test
-  (testing ":stream->ref overrides default basename-derived refs"
+(deftest source-ref-override-test
+  (testing ":source->ref overrides default basename-derived refs"
     (let [d (tmp-dir)
           target (str (io/file d "repo"))]
       (try
@@ -927,8 +927,8 @@
                       p4/describe     (fn [_ n] (describe-fixture n))
                       p4/print-bytes! print-bytes-stub]
           (api/clone! {:conn        {:p4/port "h:1666"}
-                       :streams     ["//stream/main"]
-                       :stream->ref {"//stream/main" "refs/heads/trunk"}
+                       :sources     ["//stream/main"]
+                       :source->ref {"//stream/main" "refs/heads/trunk"}
                        :target      target}))
         (testing "the override ref exists, default would not"
           (let [{:keys [stdout-bytes]}
@@ -973,7 +973,7 @@
                       p4/describe              (constantly fixture-cl)
                       p4/print-bytes!          print-bytes-stub]
           (api/clone! {:conn   {:p4/port "h:1666"}
-                       :stream "//stream/main"
+                       :source "//stream/main"
                        :target target}))
         (testing "the extra-component file imports because the server view sees it"
           (let [{:keys [stdout-bytes]}
@@ -996,7 +996,7 @@
                       p4/describe     (fn [_ n] (describe-fixture n))
                       p4/print-bytes! print-bytes-stub]
           (let [result (api/clone! {:conn   {:p4/port "h:1666"}
-                                    :stream "//stream/main"
+                                    :source "//stream/main"
                                     :target target})]
             (is (= 1 (:commits result)))))
         (finally (rm-rf d))))))
@@ -1039,7 +1039,7 @@
                                                :rev/flags #{} :rev/keyword-flags #{}}]})
                   p4/print-bytes!          print-bytes-stub]
       (api/clone! {:conn   {:p4/port "h:1666"}
-                   :stream (str "//stream/" (name type-kw))
+                   :source (str "//stream/" (name type-kw))
                    :target target}))))
 
 (deftest task-stream-clones-via-ephemeral-test
@@ -1069,29 +1069,6 @@
           (is (= 100 (:last-change result))))
         (finally (rm-rf d))))))
 
-(deftest deprecated-stream-key-still-works-test
-  (testing ":stream still imports correctly + emits a stderr warning"
-    (let [d (tmp-dir)
-          target (str (io/file d "repo"))
-          err-buf (java.io.StringWriter.)]
-      (try
-        (binding [*err* err-buf]
-          (with-redefs [p4/info         (constantly info-2024)
-                        p4/stream-chain (constantly [mainline])
-                        p4/changes      (fn [_ _ & _] [{:p4/change 100}])
-                        p4/describe     (fn [_ n] (describe-fixture n))
-                        p4/print-bytes! print-bytes-stub]
-            (let [result (api/clone! {:conn   {:p4/port "h:1666"}
-                                      :stream "//stream/main"
-                                      :target target})]
-              (is (= 1 (:commits result))))))
-        (testing "deprecation warning surfaced on stderr"
-          (let [err (str err-buf)]
-            (is (str/includes? err "deprecated"))
-            (is (str/includes? err ":stream"))
-            (is (str/includes? err ":source"))))
-        (finally (rm-rf d))))))
-
 (deftest stop-predicate-test
   (let [d (tmp-dir)]
     (try
@@ -1105,7 +1082,7 @@
         (let [target  (str (io/file d "repo"))
               counter (atom 0)]
           (api/clone! {:conn {:p4/port "h:1666"}
-                       :stream "//stream/main" :target target
+                       :source "//stream/main" :target target
                        :stop?  (fn [] (>= @counter 3))
                        :progress-fn (fn [_] (swap! counter inc))})
           ;; Stop is checked BEFORE each op; expect ≤3 commits
