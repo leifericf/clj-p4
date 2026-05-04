@@ -75,7 +75,10 @@
 (defn- run-p4!
   "Invoke `p4` with `mode-flag` (e.g. `[\"-G\"]` or `[\"-Mj\"]`) followed by
    `cmd-args`. Returns raw stdout-bytes; throws on non-zero exit. Refuses
-   any subcommand outside the read-only / metadata-only allowlist."
+   any subcommand outside the read-only / metadata-only allowlist.
+
+   Honours `:p4/retries` and `:p4/retry-backoff-ms` on the conn for
+   retry-on-transient-failure (see `clj-p4.shell.proc/run!`)."
   ([conn mode-flag cmd-args]
    (run-p4! conn mode-flag cmd-args nil))
   ([conn mode-flag cmd-args stdin-bytes]
@@ -83,7 +86,10 @@
    (let [argv (concat ["p4"] mode-flag (conn-args conn) cmd-args)
          opts (cond-> {:env        (env-with-ticket conn)
                        :timeout-ms (:p4/timeout-ms conn)}
-                stdin-bytes (assoc :stdin-bytes stdin-bytes))
+                (:p4/retries conn)          (assoc :retries (:p4/retries conn))
+                (:p4/retry-backoff-ms conn) (assoc :retry-backoff-ms
+                                                   (:p4/retry-backoff-ms conn))
+                stdin-bytes                 (assoc :stdin-bytes stdin-bytes))
          {:keys [stdout-bytes]} (proc/run-checked! (vec argv) opts)]
      stdout-bytes)))
 
@@ -189,8 +195,12 @@
                (not keyword-expand?)  (conj "-k")
                true                   (conj depot-rev))
         env  (env-with-ticket conn)
+        opts (cond-> {:env env :timeout-ms (:p4/timeout-ms conn)}
+               (:p4/retries conn)          (assoc :retries (:p4/retries conn))
+               (:p4/retry-backoff-ms conn) (assoc :retry-backoff-ms
+                                                  (:p4/retry-backoff-ms conn)))
         {:keys [exit stdout-bytes stderr]}
-        (proc/run! argv {:env env :timeout-ms (:p4/timeout-ms conn)})]
+        (proc/run! argv opts)]
     (when-not (zero? exit)
       (throw (ex-info (str "p4 print failed: " (str/trim (or stderr "")))
                       {:clj-p4/error :p4-print-failed
@@ -264,6 +274,44 @@
        :client/root       root
        :client/view-lines (parse-client-view-lines spec-text)})))
 
+(defn- format-classic-client-spec
+  "Render a generic (non-stream) ephemeral client spec mapping
+   `depot-glob` to the client root. Used for classic depot paths that
+   live outside any stream depot."
+  [{:keys [client owner root depot-glob]}]
+  (str "Client: "  client                                 "\n"
+       "Owner: "   (or owner "clj-p4")                    "\n"
+       "Root: "    root                                   "\n"
+       "Options: " "noallwrite noclobber locked"          "\n"
+       "LineEnd: " "local"                                "\n"
+       "View:\n"
+       "\t" depot-glob " //" client "/...\n"))
+
+(defn create-classic-client!
+  "Like `create-stream-client!` but for a classic (non-stream) depot
+   path: creates a generic ephemeral client whose `View:` maps `depot-path`
+   (with a trailing `/...` if absent) to the client root. Returns the
+   same shape as `create-stream-client!`."
+  [conn depot-path & {:keys [name-prefix root-prefix]
+                      :or   {name-prefix "clj-p4-"
+                             root-prefix "/tmp/clj-p4-eph-"}}]
+  (let [u           (uuid8)
+        client-name (str name-prefix u)
+        root        (str root-prefix u)
+        depot-glob  (cond-> depot-path
+                      (not (str/ends-with? depot-path "/..."))
+                      (str "/..."))
+        spec        (format-classic-client-spec {:client     client-name
+                                                 :owner      (:p4/user conn)
+                                                 :root       root
+                                                 :depot-glob depot-glob})]
+    (run-p4! conn [] ["client" "-i"] (.getBytes ^String spec "UTF-8"))
+    (let [back (run-p4! conn [] ["client" "-o" client-name])
+          spec-text (String. ^bytes back "UTF-8")]
+      {:client/name       client-name
+       :client/root       root
+       :client/view-lines (parse-client-view-lines spec-text)})))
+
 (defn delete-stream-client!
   "Tear down an ephemeral P4 client created by `create-stream-client!`.
    Metadata-only — does not touch any depot file. Idempotent: a missing
@@ -284,6 +332,17 @@
    `:client/view-lines`)."
   [conn stream-name f]
   (let [{:client/keys [name] :as info} (create-stream-client! conn stream-name)]
+    (try
+      (f (assoc conn :p4/client name) info)
+      (finally
+        (delete-stream-client! conn name)))))
+
+(defn with-classic-client
+  "Like `with-ephemeral-client` but creates a non-stream client whose
+   `View:` maps `depot-path` to the client root. For classic
+   (non-stream) depot paths."
+  [conn depot-path f]
+  (let [{:client/keys [name] :as info} (create-classic-client! conn depot-path)]
     (try
       (f (assoc conn :p4/client name) info)
       (finally

@@ -128,6 +128,65 @@
   [chain]
   (= :virtual (:stream/type (last chain))))
 
+(defn- classic-depot-error?
+  "True if `e` is a `:proc-failed` ex-info from `p4 stream -o` reporting
+   that the path is not a stream — meaning it's a classic depot path."
+  [e]
+  (let [{:keys [stderr]} (ex-data e)]
+    (and stderr
+         (boolean (re-find #"(?i)not a stream|no such stream" (str stderr))))))
+
+(defn- resolve-source
+  "Decide whether `source` is a stream (returns `{:source-type :stream
+   :chain <vec>}`) or a classic depot path (`{:source-type :classic
+   :stream <synth-spec>}`)."
+  [conn source mode]
+  (try
+    {:source-type :stream :chain (p4/stream-chain conn source :mode mode)}
+    (catch clojure.lang.ExceptionInfo e
+      (if (classic-depot-error? e)
+        (let [stripped (str/replace source #"/\.\.\.$" "")]
+          {:source-type :classic
+           :stream      {:stream/name     stripped
+                         :stream/parent   nil
+                         :stream/type     :classic
+                         :stream/options  #{}
+                         :stream/paths    []
+                         :stream/remapped []
+                         :stream/ignored  []}})
+        (throw e)))))
+
+(defn- clone-via-classic!
+  "Clone path for classic (non-stream) depot paths. Creates a generic
+   ephemeral client whose `View:` maps the depot path to the client root,
+   runs the import, tears the client down."
+  [{:keys [conn stream target classic-stream mode max-changes exclude
+           ref progress-fn stop?]}]
+  (p4/with-classic-client
+    conn stream
+    (fn [eph-conn {:client/keys [name view-lines]}]
+      (let [client-path (str "//" name "/...")
+            view-val    (view/client-view->view
+                         view-lines
+                         :stream-name (:stream/name classic-stream))
+            changes     (resolve-changes eph-conn client-path
+                                         {:max-changes max-changes} mode)
+            plan-val    (plan/clone-plan
+                         {:conn         eph-conn
+                          :stream-chain [classic-stream]
+                          :changelists  changes
+                          :target       target
+                          :view         view-val
+                          :excludes     exclude
+                          :options      {:max-changes max-changes
+                                         :checkpoint-every 1000}})]
+        (git/init-bare! target)
+        (let [final (run-fast-import! plan-val target eph-conn ref
+                                      progress-fn stop?)]
+          {:target      target
+           :commits     (count changes)
+           :last-change (:last-change final)})))))
+
 (defn- clone-via-ephemeral!
   "Clone path for streams that need an ephemeral client (virtual streams).
    Creates the client, builds the view from the server-filled `View:`
@@ -180,11 +239,18 @@
        :last-change (:last-change final)})))
 
 (defn clone!
-  "Clone a Perforce stream into a new bare git repo at `target`.
+  "Clone a Perforce source path into a new bare git repo at `target`.
+
+   `:stream` may be:
+   - a stream depot path (`\"//stream/main\"`) — mainline, development,
+     release, or virtual; the parent chain is walked automatically.
+   - a classic depot path (`\"//depot/main/src\"` or
+     `\"//depot/main/src/...\"`) — for non-stream depots.
 
    Required:
-     :conn         ConnectionSpec
-     :stream       depot path of the stream (e.g. `\"//stream/main\"`)
+     :conn         ConnectionSpec (`:p4/retries N` retries on transient
+                   network/server failure; `:p4/timeout-ms` per call).
+     :stream       depot path (stream OR classic — see above)
      :target       absolute path for the new bare repo
 
    Optional:
@@ -199,11 +265,10 @@
    Refuses to clone into an existing non-empty `target` — either delete
    it first or, if it is already a clj-p4 clone, call `sync!`.
 
-   Virtual streams are supported. Behind the scenes the library creates
-   an ephemeral, locked-down client bound to the stream so the
-   server-filtered view can be queried, then deletes the client when
-   done. The `git-p4:` trailer keeps using the user-visible stream
-   name."
+   Virtual streams and classic depot paths are both routed through an
+   auto-managed, locked-down ephemeral client (`Options: noallwrite
+   noclobber locked`). The `git-p4:` trailer always carries the
+   user-supplied source path, not the ephemeral client name."
   [{:keys [conn stream target ref max-changes exclude
            progress-fn stop?]
     :or   {ref         "refs/heads/main"
@@ -211,14 +276,18 @@
            stop?       (constantly false)}}]
   (assert-target-empty! target)
   (let [{:keys [mode]} (choose-mode conn)
-        chain          (p4/stream-chain conn stream :mode mode)
-        ctx            {:conn conn :stream stream :target target
-                        :chain chain :mode mode
-                        :max-changes max-changes :exclude exclude
-                        :ref ref :progress-fn progress-fn :stop? stop?}]
-    (if (virtual-leaf? chain)
-      (clone-via-ephemeral! ctx)
-      (clone-direct! ctx))))
+        {:keys [source-type chain] classic-stream :stream}
+        (resolve-source conn stream mode)
+        ctx (cond-> {:conn conn :stream stream :target target
+                     :mode mode
+                     :max-changes max-changes :exclude exclude
+                     :ref ref :progress-fn progress-fn :stop? stop?}
+              chain          (assoc :chain chain)
+              classic-stream (assoc :classic-stream classic-stream))]
+    (cond
+      (= :classic source-type)    (clone-via-classic! ctx)
+      (virtual-leaf? chain)        (clone-via-ephemeral! ctx)
+      :else                        (clone-direct! ctx))))
 
 (defn- last-trailer-message
   "Body of the most recent commit on `ref` whose message matches the
@@ -288,28 +357,60 @@
         (assoc (repo-state target :ref ref)
                :synced (count new-changes))))))
 
+(defn- sync-via-classic!
+  [{:keys [conn stream target classic-stream mode since exclude
+           ref progress-fn stop?]}]
+  (p4/with-classic-client
+    conn stream
+    (fn [eph-conn {:client/keys [name view-lines]}]
+      (let [client-path (str "//" name "/...")
+            view-val    (view/client-view->view
+                         view-lines
+                         :stream-name (:stream/name classic-stream))
+            new-changes (resolve-changes eph-conn client-path
+                                         {:since (inc since)} mode)]
+        (if (empty? new-changes)
+          (assoc (repo-state target :ref ref) :synced 0)
+          (let [plan-val (plan/sync-plan
+                          {:conn         eph-conn
+                           :stream-chain [classic-stream]
+                           :changelists  new-changes
+                           :target       target
+                           :view         view-val
+                           :excludes     exclude
+                           :since-change since
+                           :options      {:checkpoint-every 1000}})]
+            (run-fast-import! plan-val target eph-conn ref progress-fn stop?)
+            (assoc (repo-state target :ref ref)
+                   :synced (count new-changes))))))))
+
 (defn sync!
   "Bring an existing clj-p4 clone at `target` up to date with the server.
 
    Required:
      :conn   ConnectionSpec
-     :stream stream depot path
+     :stream depot path (stream or classic — same shape as `clone!`)
      :target existing bare-repo path
 
-   Optional: same as `clone!`. Virtual streams are supported via the
-   same auto-managed ephemeral-client path as `clone!`."
+   Optional: same as `clone!`. Virtual streams and classic depot paths
+   are routed through the same auto-managed ephemeral-client path as
+   `clone!`."
   [{:keys [conn stream target ref exclude progress-fn stop?]
     :or   {ref         "refs/heads/main"
            progress-fn (fn [_])
            stop?       (constantly false)}}]
   (let [{:keys [mode]} (choose-mode conn)
-        chain          (p4/stream-chain conn stream :mode mode)
-        state          (repo-state target :ref ref)
-        since          (or (:last-change state) 0)
-        ctx            {:conn conn :stream stream :target target
-                        :chain chain :mode mode :since since
-                        :exclude exclude
-                        :ref ref :progress-fn progress-fn :stop? stop?}]
-    (if (virtual-leaf? chain)
-      (sync-via-ephemeral! ctx)
-      (sync-direct! ctx))))
+        {:keys [source-type chain] classic-stream :stream}
+        (resolve-source conn stream mode)
+        state (repo-state target :ref ref)
+        since (or (:last-change state) 0)
+        ctx   (cond-> {:conn conn :stream stream :target target
+                       :mode mode :since since
+                       :exclude exclude
+                       :ref ref :progress-fn progress-fn :stop? stop?}
+                chain          (assoc :chain chain)
+                classic-stream (assoc :classic-stream classic-stream))]
+    (cond
+      (= :classic source-type) (sync-via-classic! ctx)
+      (virtual-leaf? chain)    (sync-via-ephemeral! ctx)
+      :else                    (sync-direct! ctx))))

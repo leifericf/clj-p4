@@ -264,6 +264,51 @@
               (is (not (str/includes? msg "virt-eph")))))))
       (finally (rm-rf d)))))
 
+(deftest classic-depot-routes-via-classic-client-test
+  (testing "non-stream depot path triggers classic-client clone path"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))
+          stream-chain-stub
+          (fn [_ _ & _]
+            (throw (ex-info "p4 stream -o failed: //depot/main is not a stream"
+                            {:clj-p4/error :proc-failed
+                             :stderr "//depot/main is not a stream"})))
+          with-classic
+          (fn [_conn _path f]
+            (let [info {:client/name "classic-eph"
+                        :client/view-lines
+                        ["//depot/main/... //classic-eph/..."]}
+                  eph-conn {:p4/port "h:1666" :p4/client "classic-eph"}]
+              (f eph-conn info)))]
+      (try
+        (with-redefs [p4/info               (constantly info-2024)
+                      p4/stream-chain       stream-chain-stub
+                      p4/with-classic-client with-classic
+                      p4/changes            (fn [_ _ & _] [{:p4/change 100}])
+                      p4/describe           (fn [_ _]
+                                              {:p4/change 100 :p4/user "x"
+                                               :p4/time 0 :p4/desc "classic"
+                                               :p4/files
+                                               [{:rev/depot  "//depot/main/src/x.cpp"
+                                                 :rev/rev    1
+                                                 :rev/action :add
+                                                 :rev/type   :text
+                                                 :rev/flags  #{}
+                                                 :rev/keyword-flags #{}}]})
+                      p4/print-bytes!       print-bytes-stub]
+          (let [result (api/clone! {:conn   {:p4/port "h:1666"}
+                                    :stream "//depot/main"
+                                    :target target})]
+            (is (= 1 (:commits result)))
+            (testing "trailer references the user-supplied depot path"
+              (let [{:keys [stdout-bytes]}
+                    (proc/run-checked! ["git" "-C" target "log" "-1"
+                                        "--pretty=%B" "refs/heads/main"])
+                    msg (String. ^bytes stdout-bytes "UTF-8")]
+                (is (str/includes? msg "//depot/main"))
+                (is (not (str/includes? msg "classic-eph")))))))
+        (finally (rm-rf d))))))
+
 (deftest virtual-stream-cleanup-on-error-test
   (testing "ephemeral client is torn down even if the import fails"
     (let [d (tmp-dir)

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.3.0-alpha
+
+Read-direction parity step 2 of 6: classic (non-stream) depot paths and per-command retries.
+
+### Added
+
+- **Classic depot path support.** `clone!` and `sync!` now accept any depot path, not just stream depots. When the supplied path isn't a stream (detected by `p4 stream -o` reporting "not a stream"), the call is routed through a generic ephemeral client whose `View:` is generated as `<depot-path>/... //<client>/...`. Same locked-down `Options: noallwrite noclobber locked` lifecycle as the virtual-stream path. The `[git-p4: ...]` trailer carries the user-supplied depot path.
+- **`clj-p4.shell.p4/with-classic-client`** plus `create-classic-client!` — sibling of `with-ephemeral-client` for non-stream depots.
+- **`:p4/retries N` and `:p4/retry-backoff-ms M` on the connection spec.** Each `p4` invocation automatically retries up to N times on transient failure (stderr matching `connection|reset|timeout|temporarily|broken pipe|RPC`), with exponential backoff starting at M ms (default 100). `proc/run!` gained the same `:retries` / `:retry-backoff-ms` options for reuse outside the p4 path.
+
+### Notes
+
+- The roadmap's `:connection-refresh-every` flag is omitted: clj-p4 uses one-shot `p4` subprocesses authenticated by `P4PASSWD=<ticket>`, so each call is already a fresh connection. Long-lived libp4api session refresh (p4-fusion's `--refresh`) does not apply.
+- `:stream` is kept as the parameter name on `clone!` / `sync!` even though the value is now "stream-or-depot". The roadmap's `:stream` → `:source` rename is deferred to avoid churn in downstream callers; the docstring spells out that any depot path works.
+
 ## 0.2.0-alpha
 
 Read-direction parity step 1 of 6 toward `p4-fusion` parity: virtual streams, hard read-only enforcement, and a README that earns its paragraph count.
