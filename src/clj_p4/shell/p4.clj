@@ -180,6 +180,23 @@
              :label/options (get r "Options")})
           recs)))
 
+(defn sizes-summary
+  "`p4 sizes -as <path>` → totals across every file at the path.
+   Returns `{:p4/file-count :p4/total-bytes}`. The `-s` flag asks p4 for
+   a single summary record rather than per-file rows; we sum across
+   records in case multiple come back."
+  [conn path & {:keys [mode] :or {mode :G}}]
+  (let [recs (->> (run-p4! conn (with-mode-flag mode) ["sizes" "-as" path])
+                  (decode mode))]
+    (reduce (fn [acc r]
+              (let [files (parse-long (or (get r "fileCount") "0"))
+                    bytes (parse-long (or (get r "fileSize") "0"))]
+                (-> acc
+                    (update :p4/file-count + files)
+                    (update :p4/total-bytes + bytes))))
+            {:p4/file-count 0 :p4/total-bytes 0}
+            recs)))
+
 (defn label-spec
   "`p4 label -o <name>` → `{:label/name :label/revision :label/desc ...}`.
    `:label/revision` is the raw `Revision:` string verbatim — callers

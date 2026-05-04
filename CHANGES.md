@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## 0.8.0-alpha
+
+The "everything we shipped" release. No new code surface — instead, the README is rewritten to reflect the full feature set landed across 0.2.0 → 0.7.0 (virtual streams, classic depot paths, retries, parallel fetch, max-print-bytes, user-map, labels-as-tags, validate-tip), plus a Quick start section showing the actual call shape.
+
+### Changed
+
+- **README expanded** with a What it does / Quick start surface, and the Safety table refreshed to include `sizes` and `labels` / `label -o` (added across 0.6.0 / 0.7.0).
+
+### Notes
+
+The roadmap items still deferred at this point: multi-stream / multi-ref single repo, stream `Components:` resolution via auto-view, byte-level validation harness (vs. the current count + size summary), `:print-batch-size`, `:lookahead`, integrate-as-2-parent-merge. Each is its own design pass and lands cleanly when a real-world target asks for it. Flipping the GitHub repo to public, publishing to Clojars, and switching downstream callers from `:local/root` to `:mvn/version` are user decisions and not in this release.
+
+## 0.7.0-alpha
+
+Read-direction parity step 6 of 6: a first-pass validation harness so callers can sanity-check a clone against the live server before they trust it.
+
+### Added
+
+- **`clj-p4.validate/validate-tip`** — walks the git tip's tree, sums the file count and total bytes, then compares against `p4 sizes -as <source>/...@<change>` at the changelist the tip resumes from. Returns `{:ok? boolean :git {...} :p4 {...} :change N}`. The check is intentionally cheap (one server RPC + one `git ls-tree`); a small disagreement is a hint, not a verdict.
+- **`clj-p4.shell.p4/sizes-summary`** — the wire primitive the harness uses; `sizes` is on the read-only allowlist landed in 0.2.0-alpha.
+
+### Notes
+
+- The roadmap's heavier byte-level validation harness (walking every commit and `p4 print` / `git show`-ing each file pairwise) is **deferred.** It's a few-orders-of-magnitude more expensive RPC-wise than the count + size summary and lands more naturally once benchmarks exist to make the trade-off explicit.
+- The roadmap's `effective-view` refactor (always go through an ephemeral client to pick up server-resolved `Components:`) is also **deferred.** It would shift the default behaviour for non-virtual streams away from the pure-data parent-chain merge, which is a bigger commitment than belongs in a step-6 release. For now, classic + mainline + development + release streams keep using the pure merge; virtual streams already use the auto-view.
+
 ## 0.6.0-alpha
 
 Read-direction parity step 5 of 6: author mapping (P4 user → real name + email) and labels-as-annotated-tags. Both are wins over `p4-fusion`, which uses raw P4 usernames and ignores labels.
