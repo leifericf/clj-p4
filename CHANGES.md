@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.11.0-alpha
+
+Roadmap step 3 of 8 (post-0.8.0): multi-stream / multi-ref single repo. Two streams (or N) clone into one bare repo, each on its own ref, with a shared marks file so `merge :<C>` parents from 0.10.0 cross stream boundaries automatically.
+
+### Added
+
+- **`:streams [s1 s2 ...]` on `clone!` / `sync!`.** Sibling of `:stream`. Each entry imports into its own ref. Default ref derives from the source's last path segment (`//stream/main` → `refs/heads/main`, `//stream/dev` → `refs/heads/dev`); override per-source with `:stream->ref {<source> <ref>}`. `:stream` and `:streams` are mutually exclusive — passing both throws `:clj-p4/error :stream-and-streams-set`. Returns a vector of `{:target :commits :last-change}` (one per source) instead of the single map the single-stream form returns.
+- **Shared marks file across streams.** Marks file lives at `<target>/clj-p4.marks` (where it has been since 0.1.0). Each per-stream import opens fast-import with `--import-marks-if-exists` first, so subsequent streams see prior streams' marks. Per-CL commit mark is the changelist number — global across all streams in a single P4 server, so collisions are impossible by design and a `merge :<C>` from 0.10.0 just works across stream boundaries.
+
+### Changed
+
+- **`clone!` / `sync!` factored** into `clone-one!` / `sync-one!` helpers used by both single- and multi-stream paths. The dispatch on stream type (classic / virtual / direct) is now in one place rather than three.
+
+### Notes
+
+- **Per-source `:ref` only applies to the single-stream form.** The multi-stream path uses the basename-derived default (or `:stream->ref` override) so the user doesn't have to thread N refs through one map. If you want a single source on a non-default ref, keep using `:stream` + `:ref`.
+
 ## 0.10.0-alpha
 
 Roadmap step 2 of 8 (post-0.8.0): integrate-as-2-parent merge. The biggest fidelity win still on the table for the read direction — Perforce integrations now show up as proper git merge commits rather than as linear-history "integrate"-action files.

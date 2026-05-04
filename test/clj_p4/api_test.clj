@@ -819,6 +819,115 @@
             (is (= 1 (count parents)))))
         (finally (rm-rf d))))))
 
+(def ^:private dev-stream
+  {:stream/name "//stream/dev"
+   :stream/parent "//stream/main"
+   :stream/type :development
+   :stream/options #{}
+   :stream/paths   [[:share "src/..."]]
+   :stream/remapped []
+   :stream/ignored  []})
+
+(deftest multi-stream-clones-into-separate-refs-test
+  (testing ":streams [a b] produces two refs in one bare repo"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))
+          ;; Each stream returns a different parent chain so we know
+          ;; which call is which. Same fixture body for simplicity.
+          stream-chain-stub
+          (fn [_ name & _]
+            (case name
+              "//stream/main" [mainline]
+              "//stream/dev"  [mainline dev-stream]))
+          ;; Distinct change ranges per stream so commits don't collide.
+          changes-stub
+          (fn [_ path & _]
+            (cond
+              (str/includes? path "main") [{:p4/change 100} {:p4/change 101}]
+              (str/includes? path "dev")  [{:p4/change 200} {:p4/change 201}]))
+          describe-stub
+          (fn [_ n]
+            (let [stream (if (< n 200) "//stream/main" "//stream/dev")]
+              {:p4/change n :p4/user "x" :p4/time (* n 1000)
+               :p4/desc (str "change " n)
+               :p4/stream stream
+               :p4/files [{:rev/depot (str stream "/src/file" n ".cpp")
+                           :rev/rev 1 :rev/action :add :rev/type :text
+                           :rev/flags #{} :rev/keyword-flags #{}}]}))]
+      (try
+        (with-redefs [p4/info         (constantly info-2024)
+                      p4/stream-chain stream-chain-stub
+                      p4/changes      changes-stub
+                      p4/describe     describe-stub
+                      p4/print-bytes! print-bytes-stub]
+          (let [result (api/clone! {:conn   {:p4/port "h:1666"}
+                                    :streams ["//stream/main" "//stream/dev"]
+                                    :target  target})]
+            (is (vector? result))
+            (is (= 2 (count result)))
+            (is (= 101 (-> result first :last-change)))
+            (is (= 201 (-> result second :last-change)))))
+        (testing "both refs exist in the bare repo"
+          (let [{:keys [stdout-bytes]}
+                (proc/run-checked! ["git" "-C" target "branch" "-a"])
+                branches (String. ^bytes stdout-bytes "UTF-8")]
+            (is (str/includes? branches "main"))
+            (is (str/includes? branches "dev"))))
+        (testing "marks file is shared (one file in repo dir)"
+          (is (.exists (io/file target "clj-p4.marks"))))
+        (finally (rm-rf d))))))
+
+(deftest stream-and-streams-mutually-exclusive-test
+  (testing "passing both :stream and :streams throws"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))]
+      (try
+        (is (thrown-with-msg?
+             clojure.lang.ExceptionInfo #"mutually exclusive"
+             (api/clone! {:conn   {:p4/port "h:1666"}
+                          :stream  "//stream/main"
+                          :streams ["//stream/main" "//stream/dev"]
+                          :target  target})))
+        (finally (rm-rf d)))))
+  (testing "passing neither :stream nor :streams throws"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))]
+      (try
+        (is (thrown-with-msg?
+             clojure.lang.ExceptionInfo #"needs :stream"
+             (api/clone! {:conn   {:p4/port "h:1666"}
+                          :target target})))
+        (finally (rm-rf d))))))
+
+(deftest stream-ref-override-test
+  (testing ":stream->ref overrides default basename-derived refs"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))]
+      (try
+        (with-redefs [p4/info         (constantly info-2024)
+                      p4/stream-chain (constantly [mainline])
+                      p4/changes      (fn [_ _ & _] [{:p4/change 100}])
+                      p4/describe     (fn [_ n] (describe-fixture n))
+                      p4/print-bytes! print-bytes-stub]
+          (api/clone! {:conn        {:p4/port "h:1666"}
+                       :streams     ["//stream/main"]
+                       :stream->ref {"//stream/main" "refs/heads/trunk"}
+                       :target      target}))
+        (testing "the override ref exists, default would not"
+          (let [{:keys [stdout-bytes]}
+                (proc/run-checked! ["git" "-C" target "branch" "-a"])
+                branches (String. ^bytes stdout-bytes "UTF-8")]
+            (is (str/includes? branches "trunk"))))
+        (finally (rm-rf d))))))
+
+(deftest default-ref-of-source-test
+  (testing "stream basename → refs/heads/<basename>"
+    (is (= "refs/heads/main"   (#'api/default-ref-of-source "//stream/main")))
+    (is (= "refs/heads/dev"    (#'api/default-ref-of-source "//stream/dev")))
+    (is (= "refs/heads/legacy" (#'api/default-ref-of-source "//depot/legacy")))
+    (is (= "refs/heads/main"   (#'api/default-ref-of-source "//stream/main/...")))
+    (is (= "refs/heads/src"    (#'api/default-ref-of-source "//depot/legacy/src/...")))))
+
 (deftest stop-predicate-test
   (let [d (tmp-dir)]
     (try
