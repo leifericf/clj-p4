@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.2.0-alpha
+
+Read-direction parity step 1 of 6 toward `p4-fusion` parity: virtual streams, hard read-only enforcement, and a README that earns its paragraph count.
+
+### Added
+
+- **Virtual stream support.** `clone!` and `sync!` now accept a virtual stream depot path (e.g. `//stream/virtual`). Behind the scenes the library creates an ephemeral, locked-down P4 client bound to the stream so the server-resolved view is the source of truth, runs the import through that client, and tears the client down in a `finally` block. The `[git-p4: ...]` trailer keeps using the user-visible stream name, not the throwaway client name.
+- **`clj-p4.shell.p4/with-ephemeral-client`** plus `create-stream-client!` / `delete-stream-client!`. Each ephemeral client is created with `Options: noallwrite noclobber locked` and a scratch root the library never writes to.
+- **`clj-p4.view/client-view->view`** parses the auto-generated client `View:` block into the same value `effective-view` produces, so the executor's depot → local mapping is identical for virtual and non-virtual streams.
+
+### Changed
+
+- **Hard read-only allowlist on every `p4` invocation.** Anything outside an explicit allowlist (`info`, `streams`, `stream -o`, `changes`, `describe`, `print`, `files`, `fstat`, `integrated`, `labels`, `label -o`, `users`, `user -o`, `protects`, `where`, `dirs`, `sizes`, plus `client -o` / `-i` / `-d` for the ephemeral-client lifecycle) throws `:clj-p4/error :write-direction-refused` before the subprocess starts. clj-p4 cannot submit, edit, integrate, shelve, revert, populate, obliterate, or otherwise mutate depot file state. Documented exhaustively in `README.md` under `## Safety`.
+- **Rewrote the README** to drop the "pre-alpha" banner (release tags carry the alpha signal), describe the read-only guarantee, and explain the virtual-stream auto-managed client.
+
 ## 0.1.0-alpha
 
 First tagged release. Pre-alpha — the public API will move; pin a SHA, not a version.

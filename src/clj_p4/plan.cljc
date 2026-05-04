@@ -18,15 +18,20 @@
      :target         absolute path to the local repo dir
 
    Optional keys:
+     :view           pre-built `View` value, e.g. from
+                     `clj-p4.view/client-view->view`. When given, takes
+                     priority over `effective-view`-from-`stream-chain`.
+                     Required path for virtual streams (where P4 has
+                     already composed the view server-side).
      :excludes       vector of compiled exclude entries (output of
                      `clj-p4.exclude/compile-patterns`)
      :options        free-form opts map (`:max-changes`, `:checkpoint-every`,
                      `:resume?`)"
-  [{:keys [conn stream-chain changelists target excludes options]}]
+  [{:keys [conn stream-chain changelists target view excludes options]}]
   {:plan/kind        :clone
    :plan/conn        conn
    :plan/stream      (last stream-chain)
-   :plan/view        (view/effective-view stream-chain)
+   :plan/view        (or view (view/effective-view stream-chain))
    :plan/changelists (vec changelists)
    :plan/excludes    (vec (or excludes []))
    :plan/target      target
@@ -35,10 +40,10 @@
 (defn sync-plan
   "Build a `SyncPlan`. Like `clone-plan` but tagged `:sync` and carries
    `:plan/since-change` (the last imported changelist)."
-  [{:keys [conn stream-chain changelists target excludes options since-change]}]
+  [{:keys [conn stream-chain changelists target view excludes options since-change]}]
   (assoc (clone-plan {:conn conn :stream-chain stream-chain
                       :changelists changelists :target target
-                      :excludes excludes :options options})
+                      :view view :excludes excludes :options options})
          :plan/kind         :sync
          :plan/since-change since-change))
 

@@ -189,19 +189,108 @@
             (is (every? :op/kind @progress)))))
       (finally (rm-rf d)))))
 
-(deftest virtual-stream-refused-test
-  (let [d (tmp-dir)]
+(def ^:private virtual-leaf
+  {:stream/name "//stream/virt"
+   :stream/parent "//stream/main"
+   :stream/type :virtual
+   :stream/options #{}
+   :stream/paths   [[:share "src/..."]]
+   :stream/remapped []
+   :stream/ignored  []})
+
+(defn- describe-virtual-fixture
+  "Same shape as describe-fixture but the depot path lives under
+   `//stream/main/src/...` (the parent), since virtual streams have no
+   storage of their own and `describe` returns parent depot paths."
+  [n]
+  (assoc (describe-fixture n)
+         :p4/files [{:rev/depot  (str "//stream/main/src/file" n ".cpp")
+                     :rev/rev    1
+                     :rev/action :add
+                     :rev/type   :text
+                     :rev/flags  #{}
+                     :rev/keyword-flags #{}}]))
+
+(deftest virtual-stream-clones-via-ephemeral-client-test
+  (let [d (tmp-dir)
+        target (str (io/file d "repo"))
+        eph-conn-arg (atom nil)
+        cleanup-called? (atom false)
+        view-lines ["//stream/main/src/... //virt-eph/src/..."]
+        with-eph (fn [_conn _stream f]
+                   (let [info {:client/name "virt-eph"
+                               :client/root "/tmp/clj-p4-eph-virt"
+                               :client/view-lines view-lines}
+                         eph-conn {:p4/port "h:1666" :p4/client "virt-eph"}]
+                     (try
+                       (reset! eph-conn-arg eph-conn)
+                       (f eph-conn info)
+                       (finally
+                         (reset! cleanup-called? true)))))]
     (try
-      (with-redefs [p4/info         (constantly info-2024)
-                    p4/stream-chain (constantly
-                                     [(assoc mainline :stream/type :virtual)])]
-        (is (thrown-with-msg?
-             clojure.lang.ExceptionInfo
-             #"virtual stream"
-             (api/clone! {:conn   {:p4/port "h:1666"}
-                          :stream "//stream/virt"
-                          :target (str (io/file d "repo"))}))))
+      (with-redefs [p4/info                 (constantly info-2024)
+                    p4/stream-chain         (constantly [mainline virtual-leaf])
+                    p4/with-ephemeral-client with-eph
+                    p4/changes              (fn [_ _ & _] [{:p4/change 100}
+                                                           {:p4/change 101}])
+                    p4/describe             (fn [_ n] (describe-virtual-fixture n))
+                    p4/print-bytes!         print-bytes-stub]
+        (let [result (api/clone! {:conn   {:p4/port "h:1666"}
+                                  :stream "//stream/virt"
+                                  :target target})]
+          (is (= 2 (:commits result)))
+          (is (= 101 (:last-change result)))
+
+          (testing "ephemeral client connection threaded through"
+            (is (= "virt-eph" (:p4/client @eph-conn-arg))))
+
+          (testing "ephemeral client torn down"
+            (is @cleanup-called?))
+
+          (testing "files imported under view-mapped local path"
+            (let [{:keys [stdout-bytes]}
+                  (proc/run-checked! ["git" "-C" target "ls-tree" "-r"
+                                      "refs/heads/main"])
+                  listing (String. ^bytes stdout-bytes "UTF-8")]
+              (is (str/includes? listing "src/file100.cpp"))
+              (is (str/includes? listing "src/file101.cpp"))))
+
+          (testing "git-p4 trailer references the user-visible stream"
+            (let [{:keys [stdout-bytes]}
+                  (proc/run-checked! ["git" "-C" target "log" "-1"
+                                      "--pretty=%B" "refs/heads/main"])
+                  msg (String. ^bytes stdout-bytes "UTF-8")]
+              (is (str/includes? msg "//stream/virt"))
+              (is (not (str/includes? msg "virt-eph")))))))
       (finally (rm-rf d)))))
+
+(deftest virtual-stream-cleanup-on-error-test
+  (testing "ephemeral client is torn down even if the import fails"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))
+          cleanup-called? (atom false)
+          with-eph (fn [_conn _stream f]
+                     (let [info {:client/name "virt-eph"
+                                 :client/view-lines
+                                 ["//stream/main/src/... //virt-eph/src/..."]}
+                           eph-conn {:p4/port "h:1666" :p4/client "virt-eph"}]
+                       (try
+                         (f eph-conn info)
+                         (finally
+                           (reset! cleanup-called? true)))))]
+      (try
+        (with-redefs [p4/info                 (constantly info-2024)
+                      p4/stream-chain         (constantly [mainline virtual-leaf])
+                      p4/with-ephemeral-client with-eph
+                      p4/changes              (fn [_ _ & _]
+                                                (throw (ex-info "boom" {})))]
+          (is (thrown-with-msg?
+               clojure.lang.ExceptionInfo #"boom"
+               (api/clone! {:conn   {:p4/port "h:1666"}
+                            :stream "//stream/virt"
+                            :target target})))
+          (is @cleanup-called?))
+        (finally (rm-rf d))))))
 
 (deftest excludes-applied-test
   (let [d  (tmp-dir)

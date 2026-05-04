@@ -61,7 +61,7 @@ Owner: admin
 Name: virtual
 Parent: //stream/main
 Type: virtual
-Description: virtual stream — clj-p4 should refuse to clone this
+Description: read-only filtered view of //stream/main/src/...
 Options: allsubmit unlocked notoparent nofromparent mergedown
 ParentView: inherit
 Paths:

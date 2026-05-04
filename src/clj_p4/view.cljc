@@ -203,3 +203,68 @@
                             remapped)))))
             (:view/entries view))
       ::no-match))
+
+(defn- parse-client-view-line
+  "`'+//depot/foo/... //ws/foo/...'` →
+   `{:kind :include :depot-glob \"//depot/foo/...\" :local-glob \"foo/...\"}`.
+   The leading `+`/`-` selects include/exclude; the client-side glob's
+   leading `//<client-name>/` is stripped so what remains is a path
+   relative to the local repo root."
+  [line]
+  (let [trimmed (str/trim line)
+        [marker rest] (cond
+                        (str/starts-with? trimmed "-") [:exclude (subs trimmed 1)]
+                        (str/starts-with? trimmed "+") [:include (subs trimmed 1)]
+                        :else                          [:include trimmed])
+        rest          (str/trim rest)
+        [depot-glob client-glob] (str/split rest #"\s+" 2)
+        local-glob    (when client-glob
+                        (str/replace (str/trim client-glob) #"^//[^/]+/" ""))]
+    (when (and depot-glob local-glob)
+      {:kind       marker
+       :depot-glob depot-glob
+       :local-glob local-glob})))
+
+(defn- compile-client-view-entry
+  [{:keys [kind depot-glob local-glob] :as parsed}]
+  (let [depot-tokens (glob->tokens depot-glob)
+        local-tokens (glob->tokens local-glob)
+        re           (tokens->re depot-tokens)]
+    {:kind       kind
+     :source     :client-view
+     :raw        parsed
+     :match-fn   (fn match [depot-file]
+                   (when-let [m (re-matches re depot-file)]
+                     (if (sequential? m) (vec (rest m)) [])))
+     :rewrite-fn (fn rewrite [captures]
+                   (subst-tokens local-tokens captures))}))
+
+(defn client-view->view
+  "Build a `View` value from an auto-generated client `View:` block (a
+   vector of strings, one per indented line). The client-side glob's
+   leading `//<client-name>/` is stripped so local paths are relative to
+   the repo root.
+
+   For a virtual stream, this view is the source of truth — P4 has
+   already composed `Paths:` + `Components:` + `ParentView:` server-side
+   and emitted the result as the client's flat `View:` block.
+
+   `:view/remap` and `:view/ignores` come back empty: they live on the
+   stream spec, not on the client view. Virtual streams forbid Remapped
+   / Ignored anyway.
+
+   Per P4's own rule, later view entries override earlier ones, so we
+   reverse the entries vector at compile time (matches `effective-view`)."
+  [view-lines & {:keys [stream-name]}]
+  (let [parsed  (->> view-lines
+                     (map str/trim)
+                     (remove str/blank?)
+                     (keep parse-client-view-line))
+        entries (->> parsed
+                     (mapv compile-client-view-entry)
+                     rseq
+                     vec)]
+    {:view/stream  stream-name
+     :view/entries entries
+     :view/remap   []
+     :view/ignores []}))

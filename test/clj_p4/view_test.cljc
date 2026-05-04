@@ -142,3 +142,41 @@
            (view/map-depot->local view "//stream/main/src/old/foo.cpp")))
     (is (= "src/main.cpp"
            (view/map-depot->local view "//stream/main/src/main.cpp")))))
+
+(deftest client-view->view-basic-test
+  (testing "single include line maps depot path to local"
+    (let [v (view/client-view->view ["//stream/main/src/... //virt-eph/src/..."]
+                                    :stream-name "//stream/virt")]
+      (is (= "//stream/virt" (:view/stream v)))
+      (is (= "src/main.cpp"
+             (view/map-depot->local v "//stream/main/src/main.cpp")))
+      (is (= ::view/no-match
+             (view/map-depot->local v "//stream/other/elsewhere.txt"))))))
+
+(deftest client-view->view-exclude-test
+  (testing "lines prefixed with - exclude matching paths"
+    (let [v (view/client-view->view
+             ["//stream/main/... //virt-eph/..."
+              "-//stream/main/private/... //virt-eph/private/..."]
+             :stream-name "//stream/virt")]
+      (is (= "src/main.cpp"
+             (view/map-depot->local v "//stream/main/src/main.cpp")))
+      (is (= ::view/excluded
+             (view/map-depot->local v "//stream/main/private/secret.txt"))))))
+
+(deftest client-view->view-later-wins-test
+  (testing "later view entries override earlier (P4 rule)"
+    (let [v (view/client-view->view
+             ["//stream/main/foo/... //virt-eph/foo/..."
+              "//stream/main/foo/special/... //virt-eph/elsewhere/..."]
+             :stream-name "//stream/virt")]
+      (is (= "elsewhere/file.txt"
+             (view/map-depot->local v "//stream/main/foo/special/file.txt"))))))
+
+(deftest client-view->view-strips-client-prefix-test
+  (testing "client name is stripped regardless of length / shape"
+    (let [v (view/client-view->view
+             ["//stream/main/src/... //a-very-long-client-name/src/..."]
+             :stream-name "//stream/virt")]
+      (is (= "src/x.cpp"
+             (view/map-depot->local v "//stream/main/src/x.cpp"))))))
