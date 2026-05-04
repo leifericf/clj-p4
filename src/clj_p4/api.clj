@@ -132,7 +132,7 @@
 (defn- resolve-source
   "Decide whether `source` is a stream (returns `{:source-type :stream
    :chain <vec>}`) or a classic depot path (`{:source-type :classic
-   :stream <synth-spec>}`)."
+   :source <synth-stream-spec>}`)."
   [conn source mode]
   (try
     {:source-type :stream :chain (p4/stream-chain conn source :mode mode)}
@@ -140,7 +140,7 @@
       (if (classic-depot-error? e)
         (let [stripped (str/replace source #"/\.\.\.$" "")]
           {:source-type :classic
-           :stream      {:stream/name     stripped
+           :source      {:stream/name     stripped
                          :stream/parent   nil
                          :stream/type     :classic
                          :stream/options  #{}
@@ -153,21 +153,21 @@
   "Clone path for classic (non-stream) depot paths. Creates a generic
    ephemeral client whose `View:` maps the depot path to the client root,
    runs the import, tears the client down."
-  [{:keys [conn stream target classic-stream mode max-changes exclude
+  [{:keys [conn source target classic-source mode max-changes exclude
            fetch-parallelism max-print-bytes user-map emit-labels?
            lookahead no-merge? ref progress-fn stop?]}]
   (p4/with-classic-client
-    conn stream
+    conn source
     (fn [eph-conn {:client/keys [name view-lines]}]
       (let [client-path (str "//" name "/...")
             view-val    (view/client-view->view
                          view-lines
-                         :stream-name (:stream/name classic-stream))
+                         :stream-name (:stream/name classic-source))
             changes     (resolve-changes eph-conn client-path
                                          {:max-changes max-changes} mode)
             plan-val    (plan/clone-plan
                          {:conn         eph-conn
-                          :stream-chain [classic-stream]
+                          :stream-chain [classic-source]
                           :changelists  changes
                           :target       target
                           :view         view-val
@@ -192,12 +192,12 @@
    already-created client (`eph-conn`, `client-name`, `view-lines`).
    The `with-stream-client-or-fallback` dispatch in `clone-one!` is the
    only caller — it handles the ephemeral-client lifecycle."
-  [{:keys [stream target chain mode max-changes exclude
+  [{:keys [source target chain mode max-changes exclude
            fetch-parallelism max-print-bytes user-map emit-labels?
            lookahead no-merge? ref progress-fn stop?]}
    eph-conn client-name view-lines]
   (let [client-path (str "//" client-name "/...")
-        view-val    (view/client-view->view view-lines :stream-name stream)
+        view-val    (view/client-view->view view-lines :stream-name source)
         changes     (resolve-changes eph-conn client-path
                                      {:max-changes max-changes} mode)
         plan-val    (plan/clone-plan
@@ -226,10 +226,10 @@
   "Clone path for streams whose depot path is queryable directly (mainline,
    development, release). The view comes from the parent-chain
    merge."
-  [{:keys [conn stream target chain mode max-changes exclude
+  [{:keys [conn source target chain mode max-changes exclude
            fetch-parallelism max-print-bytes user-map emit-labels?
            lookahead no-merge? ref progress-fn stop?]}]
-  (let [changes  (resolve-changes conn (str stream "/...")
+  (let [changes  (resolve-changes conn (str source "/...")
                                   {:max-changes max-changes} mode)
         plan-val (plan/clone-plan
                   {:conn         conn
@@ -274,13 +274,13 @@
      `clone-direct!` (pure-data parent-chain merge) only if ephemeral
      client creation fails (e.g. P4 protect table forbids `client -i`)."
   [{:keys [conn target] :as args} source ref]
-  (let [{:keys [mode]}     (choose-mode conn)
-        {:keys [source-type chain] classic-stream :stream}
+  (let [{:keys [mode]} (choose-mode conn)
+        {:keys [source-type chain] classic-source :source}
         (resolve-source conn source mode)
         ctx (cond-> (assoc args
-                           :stream source :ref ref :mode mode)
+                           :source source :ref ref :mode mode)
               chain          (assoc :chain chain)
-              classic-stream (assoc :classic-stream classic-stream))]
+              classic-source (assoc :classic-source classic-source))]
     (cond
       (= :classic source-type)
       (clone-via-classic! ctx)
@@ -404,11 +404,11 @@
 
 (defn- run-ephemeral-sync!
   "Body of an ephemeral-client sync."
-  [{:keys [stream target chain mode since exclude ref progress-fn stop?]
+  [{:keys [source target chain mode since exclude ref progress-fn stop?]
     :as   ctx}
    eph-conn client-name view-lines]
   (let [client-path (str "//" client-name "/...")
-        view-val    (view/client-view->view view-lines :stream-name stream)
+        view-val    (view/client-view->view view-lines :stream-name source)
         new-changes (resolve-changes eph-conn client-path
                                      {:since (inc since)} mode)]
     (if (empty? new-changes)
@@ -427,9 +427,9 @@
                :synced (count new-changes))))))
 
 (defn- sync-direct!
-  [{:keys [conn stream target chain mode since exclude
+  [{:keys [conn source target chain mode since exclude
            ref progress-fn stop?] :as ctx}]
-  (let [new-changes (resolve-changes conn (str stream "/...")
+  (let [new-changes (resolve-changes conn (str source "/...")
                                      {:since (inc since)} mode)]
     (if (empty? new-changes)
       (assoc (repo-state target :ref ref) :synced 0)
@@ -446,22 +446,22 @@
                :synced (count new-changes))))))
 
 (defn- sync-via-classic!
-  [{:keys [conn stream target classic-stream mode since exclude
+  [{:keys [conn source target classic-source mode since exclude
            ref progress-fn stop?] :as ctx}]
   (p4/with-classic-client
-    conn stream
+    conn source
     (fn [eph-conn {:client/keys [name view-lines]}]
       (let [client-path (str "//" name "/...")
             view-val    (view/client-view->view
                          view-lines
-                         :stream-name (:stream/name classic-stream))
+                         :stream-name (:stream/name classic-source))
             new-changes (resolve-changes eph-conn client-path
                                          {:since (inc since)} mode)]
         (if (empty? new-changes)
           (assoc (repo-state target :ref ref) :synced 0)
           (let [plan-val (plan/sync-plan
                           {:conn         eph-conn
-                           :stream-chain [classic-stream]
+                           :stream-chain [classic-source]
                            :changelists  new-changes
                            :target       target
                            :view         view-val
@@ -477,14 +477,14 @@
    single and multi-stream `sync!`."
   [{:keys [conn target] :as args} source ref]
   (let [{:keys [mode]} (choose-mode conn)
-        {:keys [source-type chain] classic-stream :stream}
+        {:keys [source-type chain] classic-source :source}
         (resolve-source conn source mode)
         state (repo-state target :ref ref)
         since (or (:last-change state) 0)
         ctx   (cond-> (assoc args
-                             :stream source :ref ref :mode mode :since since)
+                             :source source :ref ref :mode mode :since since)
                 chain          (assoc :chain chain)
-                classic-stream (assoc :classic-stream classic-stream))]
+                classic-source (assoc :classic-source classic-source))]
     (cond
       (= :classic source-type)
       (sync-via-classic! ctx)

@@ -30,7 +30,7 @@
   [{:keys [conn stream-chain changelists target view excludes options]}]
   {:plan/kind        :clone
    :plan/conn        conn
-   :plan/stream      (last stream-chain)
+   :plan/source      (last stream-chain)
    :plan/view        (or view (view/effective-view stream-chain))
    :plan/changelists (vec changelists)
    :plan/excludes    (vec (or excludes []))

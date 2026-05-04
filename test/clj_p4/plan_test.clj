@@ -22,7 +22,7 @@
             :options      {:checkpoint-every 1000}})]
     (is (= :clone     (:plan/kind p)))
     (is (= conn       (:plan/conn p)))
-    (is (= mainline   (:plan/stream p)))
+    (is (= mainline   (:plan/source p)))
     (is (= [100 101 102] (:plan/changelists p)))
     (is (= "/tmp/x"   (:plan/target p)))
     (is (= "//stream/main" (-> p :plan/view :view/stream)))))

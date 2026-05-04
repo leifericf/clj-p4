@@ -330,7 +330,7 @@
      :view              (:plan/view plan)
      :excludes          (:plan/excludes plan)
      :target            (:plan/target plan)
-     :stream-name       (:stream/name (:plan/stream plan))
+     :stream-name       (:stream/name (:plan/source plan))
      :ref               (or ref "refs/heads/main")
      :fetch-parallelism (:fetch-parallelism opts)
      :max-print-bytes   (:max-print-bytes opts)
