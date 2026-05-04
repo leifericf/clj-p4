@@ -8,6 +8,7 @@
             [clj-p4.plan :as plan]
             [clj-p4.shell.git :as git]
             [clj-p4.shell.p4 :as p4]
+            [clj-p4.shell.proc :as proc]
             [clj-p4.view :as view]
             [clojure.java.io :as io]
             [clojure.string :as str]))
@@ -25,9 +26,9 @@
   (try
     (and (.exists (io/file (str repo-path) "HEAD"))
          (let [{:keys [exit stdout-bytes]}
-               (clj-p4.shell.proc/run! ["git" "-C" (str repo-path)
-                                        "log" "-1" "--pretty=%B"
-                                        "refs/heads/main"])]
+               (proc/run! ["git" "-C" (str repo-path)
+                           "log" "-1" "--pretty=%B"
+                           "refs/heads/main"])]
            (and (zero? exit)
                 (str/includes? (String. ^bytes stdout-bytes "UTF-8")
                                "git-p4:"))))
@@ -346,7 +347,7 @@
    commit on top of a clj-p4 history doesn't hide the trailer below it."
   [target ref]
   (let [{:keys [exit stdout-bytes]}
-        (clj-p4.shell.proc/run!
+        (proc/run!
          ["git" "-C" (str target) "log" "-1" "-E"
           "--grep=\\[git-p4:" "--pretty=%B" ref])]
     (when (and (zero? exit) stdout-bytes)
@@ -374,8 +375,7 @@
   (let [mode        (:mode ctx)
         new-changes (resolve-changes sync-conn query-path
                                      {:since (inc since)} mode)]
-    (if (empty? new-changes)
-      (assoc (repo-state target :ref ref) :synced 0)
+    (if (seq new-changes)
       (let [plan-val (plan/sync-plan
                       {:conn         sync-conn
                        :stream-chain stream-chain
@@ -387,7 +387,8 @@
                        :options      (build-options ctx)})]
         (run-fast-import! plan-val target sync-conn ref progress-fn stop?)
         (assoc (repo-state target :ref ref)
-               :synced (count new-changes))))))
+               :synced (count new-changes)))
+      (assoc (repo-state target :ref ref) :synced 0))))
 
 (defn- run-ephemeral-sync!
   "Body of an ephemeral-client sync. Caller provides the live client."

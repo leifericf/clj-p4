@@ -189,17 +189,23 @@
                   div  (some
                         (fn [{git-sha :sha path :path}]
                           (let [git-bytes (git-blob-bytes target git-sha)
-                                p4-bytes  (try
-                                            (p4-print-bytes conn
-                                                            (depot-of path)
-                                                            change)
-                                            (catch Exception _ nil))]
-                            (when (or (nil? p4-bytes)
+                                {:keys [p4-bytes p4-error]}
+                                (try
+                                  {:p4-bytes (p4-print-bytes conn
+                                                             (depot-of path)
+                                                             change)}
+                                  (catch Exception e
+                                    {:p4-error (ex-message e)}))]
+                            (when (or p4-error
                                       (not (java.util.Arrays/equals
                                             ^bytes git-bytes ^bytes p4-bytes)))
                               {:commit    sha
                                :path      path
                                :change    change
+                               :reason    (if p4-error
+                                            :p4-print-failed
+                                            :byte-mismatch)
+                               :p4-error  p4-error
                                :git-sha   (sha256-hex git-bytes)
                                :p4-sha    (some-> p4-bytes sha256-hex)
                                :git-bytes git-bytes

@@ -3,12 +3,11 @@
 
    This is the only mutable layer. Every other namespace returns plain
    data; `execute!` is where blobs hit disk and commits become refs."
-  (:require [clj-p4.plan :as plan]
+  (:require [clj-p4.exclude :as exclude]
+            [clj-p4.plan :as plan]
             [clj-p4.shell.git :as git]
             [clj-p4.shell.p4 :as p4]
             [clj-p4.view :as view]
-            [clj-p4.exclude :as exclude]
-            [clojure.java.io :as io]
             [clojure.string :as str])
   (:import (java.io ByteArrayOutputStream)))
 

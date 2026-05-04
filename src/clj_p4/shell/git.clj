@@ -7,7 +7,6 @@
    resume-on-crash for free: marks file is rewritten at every commit and
    re-loaded on restart."
   (:require [clj-p4.shell.proc :as proc]
-            [clojure.java.io :as io]
             [clojure.string :as str])
   (:import (java.io OutputStream)))
 

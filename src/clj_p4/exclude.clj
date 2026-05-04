@@ -12,8 +12,8 @@
    - P4 `*` and `%n` — same semantics as in `clj-p4.view`
 
    Pure data layer."
-  (:require [clojure.string :as str]
-            [clj-p4.view :as view]))
+  (:require [clj-p4.view :as view]
+            [clojure.string :as str]))
 
 (defn pattern->re
   "Compile a pattern string into a regex matching local relative paths.
