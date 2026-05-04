@@ -6,6 +6,7 @@
    - `run!`     — collect output of a one-shot process.
    - `stream!`  — start a long-lived process and return a handle with
                   raw `:in`/`:out`/`:err` streams the caller drives."
+  (:refer-clojure :exclude [run!])
   (:require [babashka.process :as bp]
             [clojure.java.io :as io]
             [clojure.string :as str])
