@@ -149,107 +149,77 @@
                          :stream/ignored  []}})
         (throw e)))))
 
+(defn- build-options
+  "Plan-options map shared by every clone and sync helper. Keys are
+   only included when truthy on the source ctx, so a clone that didn't
+   pass `:user-map` produces an options map without that key — keeps
+   the plan EDN-printable without nil-valued keys."
+  [{:keys [max-changes fetch-parallelism max-print-bytes user-map
+           emit-labels? lookahead no-merge?]}]
+  (cond-> {:checkpoint-every 1000}
+    max-changes       (assoc :max-changes max-changes)
+    fetch-parallelism (assoc :fetch-parallelism fetch-parallelism)
+    max-print-bytes   (assoc :max-print-bytes max-print-bytes)
+    user-map          (assoc :user-map user-map)
+    emit-labels?      (assoc :emit-labels? emit-labels?)
+    lookahead         (assoc :lookahead lookahead)
+    no-merge?         (assoc :no-merge? no-merge?)))
+
+(defn- do-clone!
+  "Shared body for the three clone-helper variants. `clone-conn` is the
+   connection to issue P4 reads against (eph-conn for ephemeral paths,
+   the user's conn for direct). `query-path` is the `<...>/...` path
+   passed to `p4 changes`. `stream-chain` is the parent-first list of
+   stream specs the executor uses for view composition. `view-val` is
+   a pre-built `View` (auto-view paths) or nil to derive from the chain."
+  [{:keys [target max-changes exclude ref progress-fn stop?] :as ctx}
+   clone-conn query-path stream-chain view-val]
+  (let [mode     (:mode ctx)
+        changes  (resolve-changes clone-conn query-path
+                                  {:max-changes max-changes} mode)
+        plan-val (plan/clone-plan
+                  {:conn         clone-conn
+                   :stream-chain stream-chain
+                   :changelists  changes
+                   :target       target
+                   :view         view-val
+                   :excludes     exclude
+                   :options      (build-options ctx)})]
+    (git/init-bare! target)
+    (let [final (run-fast-import! plan-val target clone-conn ref
+                                  progress-fn stop?)]
+      {:target      target
+       :commits     (count changes)
+       :last-change (:last-change final)})))
+
 (defn- clone-via-classic!
   "Clone path for classic (non-stream) depot paths. Creates a generic
    ephemeral client whose `View:` maps the depot path to the client root,
    runs the import, tears the client down."
-  [{:keys [conn source target classic-source mode max-changes exclude
-           fetch-parallelism max-print-bytes user-map emit-labels?
-           lookahead no-merge? ref progress-fn stop?]}]
+  [{:keys [conn source classic-source] :as ctx}]
   (p4/with-classic-client
     conn source
     (fn [eph-conn {:client/keys [name view-lines]}]
-      (let [client-path (str "//" name "/...")
-            view-val    (view/client-view->view
-                         view-lines
-                         :stream-name (:stream/name classic-source))
-            changes     (resolve-changes eph-conn client-path
-                                         {:max-changes max-changes} mode)
-            plan-val    (plan/clone-plan
-                         {:conn         eph-conn
-                          :stream-chain [classic-source]
-                          :changelists  changes
-                          :target       target
-                          :view         view-val
-                          :excludes     exclude
-                          :options      (cond-> {:max-changes max-changes
-                                                 :checkpoint-every 1000}
-                                          fetch-parallelism (assoc :fetch-parallelism fetch-parallelism)
-                                          max-print-bytes   (assoc :max-print-bytes max-print-bytes)
-                                          user-map          (assoc :user-map user-map)
-                                          emit-labels?      (assoc :emit-labels? emit-labels?)
-                                          lookahead         (assoc :lookahead lookahead)
-                                          no-merge?         (assoc :no-merge? no-merge?))})]
-        (git/init-bare! target)
-        (let [final (run-fast-import! plan-val target eph-conn ref
-                                      progress-fn stop?)]
-          {:target      target
-           :commits     (count changes)
-           :last-change (:last-change final)})))))
+      (let [view-val (view/client-view->view
+                      view-lines :stream-name (:stream/name classic-source))]
+        (do-clone! ctx eph-conn (str "//" name "/...")
+                   [classic-source] view-val)))))
 
 (defn- run-ephemeral-import!
   "Body of an ephemeral-client clone for a stream. Caller provides the
    already-created client (`eph-conn`, `client-name`, `view-lines`).
    The `with-stream-client-or-fallback` dispatch in `clone-one!` is the
    only caller — it handles the ephemeral-client lifecycle."
-  [{:keys [source target chain mode max-changes exclude
-           fetch-parallelism max-print-bytes user-map emit-labels?
-           lookahead no-merge? ref progress-fn stop?]}
-   eph-conn client-name view-lines]
-  (let [client-path (str "//" client-name "/...")
-        view-val    (view/client-view->view view-lines :stream-name source)
-        changes     (resolve-changes eph-conn client-path
-                                     {:max-changes max-changes} mode)
-        plan-val    (plan/clone-plan
-                     {:conn         eph-conn
-                      :stream-chain chain
-                      :changelists  changes
-                      :target       target
-                      :view         view-val
-                      :excludes     exclude
-                      :options      (cond-> {:max-changes max-changes
-                                             :checkpoint-every 1000}
-                                      fetch-parallelism (assoc :fetch-parallelism fetch-parallelism)
-                                      max-print-bytes   (assoc :max-print-bytes max-print-bytes)
-                                      user-map          (assoc :user-map user-map)
-                                      emit-labels?      (assoc :emit-labels? emit-labels?)
-                                      lookahead         (assoc :lookahead lookahead)
-                                      no-merge?         (assoc :no-merge? no-merge?))})]
-    (git/init-bare! target)
-    (let [final (run-fast-import! plan-val target eph-conn ref
-                                  progress-fn stop?)]
-      {:target      target
-       :commits     (count changes)
-       :last-change (:last-change final)})))
+  [{:keys [source chain] :as ctx} eph-conn client-name view-lines]
+  (let [view-val (view/client-view->view view-lines :stream-name source)]
+    (do-clone! ctx eph-conn (str "//" client-name "/...")
+               chain view-val)))
 
 (defn- clone-direct!
   "Clone path for streams whose depot path is queryable directly (mainline,
-   development, release). The view comes from the parent-chain
-   merge."
-  [{:keys [conn source target chain mode max-changes exclude
-           fetch-parallelism max-print-bytes user-map emit-labels?
-           lookahead no-merge? ref progress-fn stop?]}]
-  (let [changes  (resolve-changes conn (str source "/...")
-                                  {:max-changes max-changes} mode)
-        plan-val (plan/clone-plan
-                  {:conn         conn
-                   :stream-chain chain
-                   :changelists  changes
-                   :target       target
-                   :excludes     exclude
-                   :options      (cond-> {:max-changes max-changes
-                                          :checkpoint-every 1000}
-                                   fetch-parallelism (assoc :fetch-parallelism fetch-parallelism)
-                                   max-print-bytes   (assoc :max-print-bytes max-print-bytes)
-                                   user-map          (assoc :user-map user-map)
-                                   emit-labels?      (assoc :emit-labels? emit-labels?)
-                                   lookahead         (assoc :lookahead lookahead)
-                                   no-merge?         (assoc :no-merge? no-merge?))})]
-    (git/init-bare! target)
-    (let [final (run-fast-import! plan-val target conn ref progress-fn stop?)]
-      {:target      target
-       :commits     (count changes)
-       :last-change (:last-change final)})))
+   development, release). The view comes from the parent-chain merge."
+  [{:keys [conn source chain] :as ctx}]
+  (do-clone! ctx conn (str source "/...") chain nil))
 
 (defn- default-ref-of-source
   "Stream basename → `refs/heads/<basename>`. `//stream/main` →
@@ -393,84 +363,52 @@
      :commit-count (count shas)
      :last-change  (change-from-trailer (last-trailer-message target ref))}))
 
-(defn- sync-options
-  [{:keys [fetch-parallelism max-print-bytes user-map lookahead no-merge?]}]
-  (cond-> {:checkpoint-every 1000}
-    fetch-parallelism (assoc :fetch-parallelism fetch-parallelism)
-    max-print-bytes   (assoc :max-print-bytes max-print-bytes)
-    user-map          (assoc :user-map user-map)
-    lookahead         (assoc :lookahead lookahead)
-    no-merge?         (assoc :no-merge? no-merge?)))
-
-(defn- run-ephemeral-sync!
-  "Body of an ephemeral-client sync."
-  [{:keys [source target chain mode since exclude ref progress-fn stop?]
-    :as   ctx}
-   eph-conn client-name view-lines]
-  (let [client-path (str "//" client-name "/...")
-        view-val    (view/client-view->view view-lines :stream-name source)
-        new-changes (resolve-changes eph-conn client-path
+(defn- do-sync!
+  "Shared body for the three sync-helper variants. See `do-clone!` for
+   the parameter shape — the only differences are that sync uses
+   `:since` to filter `p4 changes`, builds a `sync-plan`, skips
+   `init-bare!`, and folds the change count into the returned
+   `repo-state`."
+  [{:keys [target since exclude ref progress-fn stop?] :as ctx}
+   sync-conn query-path stream-chain view-val]
+  (let [mode        (:mode ctx)
+        new-changes (resolve-changes sync-conn query-path
                                      {:since (inc since)} mode)]
     (if (empty? new-changes)
       (assoc (repo-state target :ref ref) :synced 0)
       (let [plan-val (plan/sync-plan
-                      {:conn         eph-conn
-                       :stream-chain chain
+                      {:conn         sync-conn
+                       :stream-chain stream-chain
                        :changelists  new-changes
                        :target       target
                        :view         view-val
                        :excludes     exclude
                        :since-change since
-                       :options      (sync-options ctx)})]
-        (run-fast-import! plan-val target eph-conn ref progress-fn stop?)
+                       :options      (build-options ctx)})]
+        (run-fast-import! plan-val target sync-conn ref progress-fn stop?)
         (assoc (repo-state target :ref ref)
                :synced (count new-changes))))))
+
+(defn- run-ephemeral-sync!
+  "Body of an ephemeral-client sync. Caller provides the live client."
+  [{:keys [source chain] :as ctx} eph-conn client-name view-lines]
+  (let [view-val (view/client-view->view view-lines :stream-name source)]
+    (do-sync! ctx eph-conn (str "//" client-name "/...")
+              chain view-val)))
 
 (defn- sync-direct!
-  [{:keys [conn source target chain mode since exclude
-           ref progress-fn stop?] :as ctx}]
-  (let [new-changes (resolve-changes conn (str source "/...")
-                                     {:since (inc since)} mode)]
-    (if (empty? new-changes)
-      (assoc (repo-state target :ref ref) :synced 0)
-      (let [plan-val (plan/sync-plan
-                      {:conn         conn
-                       :stream-chain chain
-                       :changelists  new-changes
-                       :target       target
-                       :excludes     exclude
-                       :since-change since
-                       :options      (sync-options ctx)})]
-        (run-fast-import! plan-val target conn ref progress-fn stop?)
-        (assoc (repo-state target :ref ref)
-               :synced (count new-changes))))))
+  [{:keys [conn source chain] :as ctx}]
+  (do-sync! ctx conn (str source "/...") chain nil))
 
 (defn- sync-via-classic!
-  [{:keys [conn source target classic-source mode since exclude
-           ref progress-fn stop?] :as ctx}]
+  [{:keys [conn source classic-source] :as ctx}]
   (p4/with-classic-client
     conn source
     (fn [eph-conn {:client/keys [name view-lines]}]
-      (let [client-path (str "//" name "/...")
-            view-val    (view/client-view->view
-                         view-lines
-                         :stream-name (:stream/name classic-source))
-            new-changes (resolve-changes eph-conn client-path
-                                         {:since (inc since)} mode)]
-        (if (empty? new-changes)
-          (assoc (repo-state target :ref ref) :synced 0)
-          (let [plan-val (plan/sync-plan
-                          {:conn         eph-conn
-                           :stream-chain [classic-source]
-                           :changelists  new-changes
-                           :target       target
-                           :view         view-val
-                           :excludes     exclude
-                           :since-change since
-                           :options      (sync-options ctx)})]
-            (run-fast-import! plan-val target eph-conn ref progress-fn stop?)
-            (assoc (repo-state target :ref ref)
-                   :synced (count new-changes))))))))
+      (let [view-val (view/client-view->view
+                      view-lines :stream-name (:stream/name classic-source))]
+        (do-sync! ctx eph-conn (str "//" name "/...")
+                  [classic-source] view-val)))))
 
 (defn- sync-one!
   "Sync a single source into `target` on `ref`. Helper used by both

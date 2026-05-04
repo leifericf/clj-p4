@@ -6,45 +6,55 @@
    - `stream!`  — start a long-lived process and return a handle with
                   raw `:in`/`:out`/`:err` streams the caller drives."
   (:refer-clojure :exclude [run!])
-  (:require [babashka.process :as bp]
-            [clojure.java.io :as io]
+  (:require [clojure.java.io :as io]
             [clojure.string :as str])
-  (:import (java.io ByteArrayInputStream
-                    ByteArrayOutputStream
+  (:import (java.io ByteArrayOutputStream
                     InputStream
                     OutputStream)
            (java.util.concurrent TimeUnit)))
 
-(defn- bp-opts [argv {:keys [stdin-bytes env cwd]}]
-  (cond-> {:cmd       argv
-           :extra-env env
-           :dir       cwd
-           :out       :stream
-           :err       :stream}
-    stdin-bytes (assoc :in (ByteArrayInputStream. stdin-bytes))))
+(defn- ^Process start-process
+  "Start a subprocess via `ProcessBuilder`. Stdin / stdout / stderr are
+   piped (the caller drains them). `:env` extends the inherited env;
+   `:cwd` sets the working directory."
+  [argv {:keys [env cwd]}]
+  (let [pb (ProcessBuilder. ^java.util.List (vec argv))]
+    (when cwd
+      (.directory pb (io/file cwd)))
+    (when env
+      (let [m (.environment pb)]
+        (doseq [[k v] env] (.put m (str k) (str v)))))
+    (.start pb)))
+
+(defn- write-stdin!
+  "Write `bytes` to the process's stdin and close it."
+  [^Process proc ^bytes bytes]
+  (with-open [^OutputStream out (.getOutputStream proc)]
+    (.write out bytes)))
 
 (defn- run-once!
-  [argv {:keys [timeout-ms] :as opts}]
+  [argv {:keys [stdin-bytes timeout-ms] :as opts}]
   (let [start    (System/currentTimeMillis)
         out-baos (ByteArrayOutputStream.)
         err-baos (ByteArrayOutputStream.)
-        proc     (bp/process (bp-opts argv opts))
-        out-pump (future (with-open [^InputStream s (:out proc)]
+        proc     (start-process argv opts)
+        out-pump (future (with-open [^InputStream s (.getInputStream proc)]
                            (io/copy s out-baos)))
-        err-pump (future (with-open [^InputStream s (:err proc)]
+        err-pump (future (with-open [^InputStream s (.getErrorStream proc)]
                            (io/copy s err-baos)))]
     (try
+      (when stdin-bytes (write-stdin! proc stdin-bytes))
+      (when-not stdin-bytes (.close (.getOutputStream proc)))
       (let [exit (if timeout-ms
-                   (do (.waitFor ^Process (:proc proc)
-                                 timeout-ms TimeUnit/MILLISECONDS)
-                       (when (.isAlive ^Process (:proc proc))
-                         (.destroyForcibly ^Process (:proc proc))
+                   (do (.waitFor proc timeout-ms TimeUnit/MILLISECONDS)
+                       (when (.isAlive proc)
+                         (.destroyForcibly proc)
                          (throw (ex-info "subprocess timed out"
                                          {:clj-p4/error :proc-timeout
                                           :argv         argv
                                           :timeout-ms   timeout-ms})))
-                       (.exitValue ^Process (:proc proc)))
-                   (.waitFor ^Process (:proc proc)))]
+                       (.exitValue proc))
+                   (.waitFor proc))]
         @out-pump
         @err-pump
         {:exit         exit
@@ -52,7 +62,7 @@
          :stderr       (String. (.toByteArray err-baos) "UTF-8")
          :elapsed-ms   (- (System/currentTimeMillis) start)})
       (catch InterruptedException e
-        (.destroyForcibly ^Process (:proc proc))
+        (.destroyForcibly proc)
         (throw e)))))
 
 (def ^:private transient-stderr-re
@@ -127,17 +137,12 @@
    The caller is responsible for closing `:in` to signal EOF, and for calling
    `stream-close!` to wait for exit."
   ([argv] (stream! argv {}))
-  ([argv {:keys [env cwd]}]
-   (let [proc (bp/process {:cmd       argv
-                           :extra-env env
-                           :dir       cwd
-                           :in        :stream
-                           :out       :stream
-                           :err       :stream})]
-     {:proc (:proc proc)
-      :in   (:in proc)
-      :out  (:out proc)
-      :err  (:err proc)
+  ([argv opts]
+   (let [proc (start-process argv opts)]
+     {:proc proc
+      :in   (.getOutputStream proc)
+      :out  (.getInputStream proc)
+      :err  (.getErrorStream proc)
       :argv argv})))
 
 (defn stream-close!

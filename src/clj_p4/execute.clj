@@ -244,8 +244,7 @@
    executor unwinds on error so a hung `p4` doesn't keep the JVM alive."
   [{:keys [describes]}]
   (when describes
-    (doseq [^java.util.concurrent.Future f (vals @describes)]
-      (try (.cancel f true) (catch Exception _)))
+    (run! future-cancel (vals @describes))
     (reset! describes {})))
 
 (defn- merge-source-for-cl

@@ -2,9 +2,12 @@
 
 ## Unreleased
 
+## 0.17.0-alpha
+
 ### Removed
 
 - Babashka and ClojureScript runtime support. Source files are now `.clj`; `bb.edn` and `shadow-cljs.edn` are gone, along with the `:cljs` deps alias.
+- `babashka.process` dependency. Subprocess invocation uses `java.lang.ProcessBuilder` directly.
 - `:stream`, `:streams`, `:stream->ref` aliases on `clone!` / `sync!`. Use `:source`, `:sources`, `:source->ref`.
 - `docs/` directory (comparison and migration markdown).
 - `bench/` directory (clone-comparison Babashka script).
