@@ -6,12 +6,30 @@
    `clj-p4.execute`."
   (:require [clj-p4.execute :as execute]
             [clj-p4.plan :as plan]
+            [clj-p4.schema :as schema]
             [clj-p4.shell.git :as git]
             [clj-p4.shell.p4 :as p4]
             [clj-p4.shell.proc :as proc]
             [clj-p4.view :as view]
             [clojure.java.io :as io]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [malli.core :as m]
+            [malli.error :as me]))
+
+(defn- validate-options!
+  "Boundary check for `clone!` / `sync!` option maps. Throws ex-info with
+   a humanized message when `args` doesn't conform to `schema-val`. The
+   `:source` xor `:sources` constraint is enforced separately by the
+   caller; the schema is intentionally loose on that pair."
+  [schema-val args op-name]
+  (when-not (m/validate schema-val args)
+    (let [explanation (m/explain schema-val args)]
+      (throw (ex-info (str op-name " options invalid: "
+                           (me/humanize explanation))
+                      {:clj-p4/error :invalid-options
+                       :op           op-name
+                       :explanation  explanation
+                       :args         args})))))
 
 (defn available?
   "True if `p4` is on PATH and answers `p4 -V`. Cheap and offline."
@@ -320,6 +338,7 @@
            progress-fn (fn [_])
            stop?       (constantly false)}
     :as   args}]
+  (validate-options! schema/clone-options args "clone!")
   (when (and source sources)
     (throw (ex-info ":source and :sources are mutually exclusive on clone!"
                     {:clj-p4/error :source-and-sources-set
@@ -458,6 +477,7 @@
            progress-fn (fn [_])
            stop?       (constantly false)}
     :as   args}]
+  (validate-options! schema/sync-options args "sync!")
   (when (and source sources)
     (throw (ex-info ":source and :sources are mutually exclusive on sync!"
                     {:clj-p4/error :source-and-sources-set

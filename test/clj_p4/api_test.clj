@@ -1088,3 +1088,50 @@
           ;; Stop is checked BEFORE each op; expect ≤3 commits
           (is (<= (git/commit-count target "refs/heads/main") 3))))
       (finally (rm-rf d)))))
+
+(deftest clone!-rejects-malformed-options-at-boundary-test
+  (testing "missing :conn"
+    (let [e (try (api/clone! {:target "/tmp/x" :source "//s/main"})
+                 (catch clojure.lang.ExceptionInfo e e))]
+      (is (some? e))
+      (is (= :invalid-options (:clj-p4/error (ex-data e))))
+      (is (= "clone!" (:op (ex-data e))))
+      (is (str/includes? (.getMessage e) "conn"))))
+
+  (testing "non-string :source"
+    (let [e (try (api/clone! {:conn {:p4/port "h:1666"}
+                              :target "/tmp/x"
+                              :source 42})
+                 (catch clojure.lang.ExceptionInfo e e))]
+      (is (= :invalid-options (:clj-p4/error (ex-data e))))
+      (is (str/includes? (.getMessage e) "source"))))
+
+  (testing "non-positive :fetch-parallelism"
+    (let [e (try (api/clone! {:conn   {:p4/port "h:1666"}
+                              :target "/tmp/x"
+                              :source "//s/main"
+                              :fetch-parallelism 0})
+                 (catch clojure.lang.ExceptionInfo e e))]
+      (is (= :invalid-options (:clj-p4/error (ex-data e))))
+      (is (str/includes? (.getMessage e) "fetch-parallelism"))))
+
+  (testing "the validation throw beats the source/sources xor check"
+    ;; Both the schema and the imperative xor check would reject this,
+    ;; but the schema runs first — we should see :invalid-options, not
+    ;; :source-and-sources-set.
+    (let [e (try (api/clone! {:conn   {:p4/port "h:1666"}
+                              :target "/tmp/x"
+                              :source 42
+                              :sources 99})
+                 (catch clojure.lang.ExceptionInfo e e))]
+      (is (= :invalid-options (:clj-p4/error (ex-data e)))))))
+
+(deftest sync!-rejects-malformed-options-at-boundary-test
+  (testing ":since must be a positive number when present"
+    (let [e (try (api/sync! {:conn   {:p4/port "h:1666"}
+                             :target "/tmp/x"
+                             :source "//s/main"
+                             :since  -5})
+                 (catch clojure.lang.ExceptionInfo e e))]
+      (is (= :invalid-options (:clj-p4/error (ex-data e))))
+      (is (= "sync!" (:op (ex-data e)))))))

@@ -4,6 +4,12 @@
 
 ### Added
 
+- `clone!` and `sync!` validate their options map against the malli
+  schemas in `clj-p4.schema` before any side effects. Malformed options
+  throw `ex-info` with `:clj-p4/error :invalid-options` and a
+  `humanize`d message naming the offending field — e.g.
+  `:fetch-parallelism 0` is rejected with the field name in the
+  message, instead of silently misbehaving deeper in the pipeline.
 - `clj-p4.schema` — malli schemas for the parser-output domain records
   (`changelist-record`, `file-rev`, `stream-spec`, `server-info`),
   `connection-spec`, and the public `clone!` / `sync!` option maps.
