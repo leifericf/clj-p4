@@ -1,6 +1,5 @@
 (ns clj-p4.shell.proc
   "Subprocess invocation. Bytes in, bytes out — no domain knowledge.
-   Works on both JVM and Babashka via `babashka.process`.
 
    Two shapes:
    - `run!`     — collect output of a one-shot process.
