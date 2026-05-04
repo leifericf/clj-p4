@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.9.0-alpha
+
+Roadmap step 1 of 8 (post-0.8.0): describe lookahead. Eats the per-changelist `p4 describe` round-trip latency that dominates a multi-thousand-CL clone after parallel `p4 print` already absorbed the per-file fan-out.
+
+### Added
+
+- **`:lookahead N` option on `clone!` / `sync!`.** While the executor is processing change M, up to N background `p4 describe` futures are scheduled for changes M+1 .. M+N. When the executor advances to a prefetched change, its `describe` is already resolved (or in flight). Sequential by default (the change is opt-in). Pairs naturally with `:fetch-parallelism` from 0.5.0: `:fetch-parallelism` parallelises *file fetches inside one CL*, `:lookahead` parallelises *describes across CLs*. Both together keep the import I/O-bound on the link rather than RTT-bound.
+
+### Changed
+
+- **`plan/operation-seq` `:process-change` ops now carry `:op/idx`** — the change's position in `:plan/changelists`. Pure-data and additive; existing consumers ignore it. The executor uses it to drive the lookahead window.
+
+### Notes
+
+- **`:print-batch-size` (`p4-fusion`'s `--printBatch`) is not implemented and won't be.** It's a libp4api connection-overhead optimisation: p4-fusion holds a long-lived RPC connection and `--printBatch` amortises per-call setup by sending many `print` requests on one connection. clj-p4 uses one-shot `p4` subprocesses authenticated by `P4PASSWD=<ticket>`, so each call is already a fresh process and there is no connection setup to amortise. The same observation applies to `--refresh` (decided in 0.3.0): it's also a libp4api connection-lifecycle knob with no analogue in a subprocess-per-call model. `:fetch-parallelism` and `:lookahead` are the right knobs for this design — together they cover the wall-clock gap that motivated `--printBatch`.
+- **Pending describe futures are cancelled best-effort on executor failure.** `cancel(true)` only interrupts the JVM thread; the underlying `p4` subprocess may keep running until it completes or the operating system reaps it. That's acceptable for a tool whose worst-case extra cost is a few seconds of wasted server work after a clone errors out.
+
 ## 0.8.0-alpha
 
 The "everything we shipped" release. No new code surface — instead, the README is rewritten to reflect the full feature set landed across 0.2.0 → 0.7.0 (virtual streams, classic depot paths, retries, parallel fetch, max-print-bytes, user-map, labels-as-tags, validate-tip), plus a Quick start section showing the actual call shape.

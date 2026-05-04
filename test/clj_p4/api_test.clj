@@ -609,6 +609,71 @@
                 (is (= (str/trim tag-sha) first-sha))))))
         (finally (rm-rf d))))))
 
+(deftest lookahead-prefetches-describes-test
+  (testing ":lookahead N starts describe(M+1) before commit(M) finishes"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))
+          events (atom [])
+          ;; A 30 ms wait inside p4/describe is enough for the lookahead
+          ;; future to start the next describe and be observed in `events`
+          ;; before the current describe completes.
+          delay-ms 30
+          stub-describe (fn [_ n]
+                          (swap! events conj [:describe-start n
+                                              (System/nanoTime)])
+                          (Thread/sleep delay-ms)
+                          (swap! events conj [:describe-end n
+                                              (System/nanoTime)])
+                          (describe-fixture n))
+          changes [{:p4/change 100} {:p4/change 101} {:p4/change 102}]]
+      (try
+        (with-redefs [p4/info         (constantly info-2024)
+                      p4/stream-chain (constantly [mainline])
+                      p4/changes      (fn [_ _ & _] changes)
+                      p4/describe     stub-describe
+                      p4/print-bytes! print-bytes-stub]
+          (api/clone! {:conn   {:p4/port "h:1666"}
+                       :stream "//stream/main"
+                       :target target
+                       :lookahead 2}))
+        (let [evs       @events
+              starts    (filter #(= (first %) :describe-start) evs)
+              ends      (filter #(= (first %) :describe-end) evs)
+              t-start   (fn [n] (some (fn [[_ ch t]] (when (= ch n) t)) starts))
+              t-end     (fn [n] (some (fn [[_ ch t]] (when (= ch n) t)) ends))]
+          (testing "all three describes ran"
+            (is (= 3 (count starts)))
+            (is (= 3 (count ends))))
+          (testing "describe(101) started before describe(100) finished"
+            (is (< (t-start 101) (t-end 100))))
+          (testing "describe(102) started before describe(100) finished"
+            (is (< (t-start 102) (t-end 100)))))
+        (finally (rm-rf d))))))
+
+(deftest lookahead-zero-stays-sequential-test
+  (testing "no :lookahead means describe runs strictly serially"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))
+          events (atom [])
+          stub-describe (fn [_ n]
+                          (swap! events conj [:start n])
+                          (Thread/sleep 10)
+                          (swap! events conj [:end n])
+                          (describe-fixture n))]
+      (try
+        (with-redefs [p4/info         (constantly info-2024)
+                      p4/stream-chain (constantly [mainline])
+                      p4/changes      (fn [_ _ & _] [{:p4/change 100}
+                                                     {:p4/change 101}])
+                      p4/describe     stub-describe
+                      p4/print-bytes! print-bytes-stub]
+          (api/clone! {:conn   {:p4/port "h:1666"}
+                       :stream "//stream/main"
+                       :target target}))
+        (is (= [[:start 100] [:end 100] [:start 101] [:end 101]]
+               @events))
+        (finally (rm-rf d))))))
+
 (deftest stop-predicate-test
   (let [d (tmp-dir)]
     (try

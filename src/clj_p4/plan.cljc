@@ -56,15 +56,17 @@
             (vec (drop-while #(<= % last-imported) cls)))))
 
 (defn- ops-for-change
-  [change checkpoint? last?]
-  (cond-> [{:op/kind :process-change :op/change change}]
+  [idx change checkpoint? last?]
+  (cond-> [{:op/kind :process-change :op/change change :op/idx idx}]
     (or checkpoint? last?)
     (conj {:op/kind :checkpoint :op/last-change change})))
 
 (defn operation-seq
   "Lazy seq of `Op` maps for `plan`. One `:process-change` per changelist, plus
    `:checkpoint` ops every `:checkpoint-every` changes (default 1000) and at
-   the end. The executor is free to expand `:process-change` into finer-grained
+   the end. `:process-change` carries `:op/idx` — the change's position in
+   `:plan/changelists` — so a lookahead-aware executor can prefetch ahead.
+   The executor is free to expand `:process-change` into finer-grained
    `:describe`/`:fetch-file`/`:emit-commit` work internally."
   [{:plan/keys [changelists options]}]
   (let [cls (vec changelists)
@@ -73,7 +75,7 @@
     (->> cls
          (map-indexed
           (fn [i change]
-            (ops-for-change change
+            (ops-for-change i change
                             (and (pos? (inc i)) (zero? (mod (inc i) every)))
                             (= (inc i) n))))
          (mapcat identity))))

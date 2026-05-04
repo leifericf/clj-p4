@@ -215,9 +215,44 @@
      :time-ms (or (:p4/time cl) 0)
      :tz      "+0000"}))
 
+(defn- prime-describes!
+  "Maintain up to `lookahead + 1` in-flight `p4 describe` futures starting
+   at `from-idx` in `:changelists`. The `+ 1` covers the change we're
+   about to consume — its describe runs in parallel with whatever
+   `emit-change!` is doing for the previous change. No-op when
+   `lookahead` is nil or zero."
+  [{:keys [conn lookahead describes changelists]} from-idx]
+  (when (and lookahead (pos? lookahead))
+    (let [n       (count changelists)
+          end-idx (min n (+ from-idx lookahead 1))]
+      (doseq [i (range from-idx end-idx)
+              :let [c (nth changelists i)]
+              :when (not (contains? @describes c))]
+        (swap! describes assoc c (future (p4/describe conn c)))))))
+
+(defn- describe-cached
+  "Return the resolved `describe` for `change`, draining the cached
+   future if one exists. Falls back to a synchronous `p4/describe` when
+   lookahead is off or the cache misses."
+  [{:keys [conn describes]} change]
+  (if-let [fut (and describes (get @describes change))]
+    (let [result @fut]
+      (swap! describes dissoc change)
+      result)
+    (p4/describe conn change)))
+
+(defn- cancel-pending-describes!
+  "Best-effort: cancel any outstanding describe futures. Called when the
+   executor unwinds on error so a hung `p4` doesn't keep the JVM alive."
+  [{:keys [describes]}]
+  (when describes
+    (doseq [^java.util.concurrent.Future f (vals @describes)]
+      (try (.cancel f true) (catch Exception _)))
+    (reset! describes {})))
+
 (defn- emit-change!
   [{:keys [git-handle ref last-change stream-name user-map] :as ctx} change-num]
-  (let [cl     (p4/describe (:conn ctx) change-num)
+  (let [cl     (describe-cached ctx change-num)
         ops    (file-ops-for-change ctx cl)
         commit {:ref       ref
                 :mark      (:p4/change cl)
@@ -233,7 +268,8 @@
   [ctx op]
   (case (:op/kind op)
     :process-change
-    (emit-change! ctx (:op/change op))
+    (do (prime-describes! ctx (or (:op/idx op) 0))
+        (emit-change! ctx (:op/change op)))
 
     :checkpoint
     (do (git/checkpoint! (:git-handle ctx))
@@ -241,7 +277,8 @@
 
 (defn- initial-ctx
   [plan {:keys [git-handle conn ref]}]
-  (let [opts (:plan/options plan)]
+  (let [opts      (:plan/options plan)
+        lookahead (:lookahead opts)]
     {:plan              plan
      :conn              conn
      :git-handle        git-handle
@@ -253,6 +290,9 @@
      :fetch-parallelism (:fetch-parallelism opts)
      :max-print-bytes   (:max-print-bytes opts)
      :user-map          (:user-map opts)
+     :lookahead         lookahead
+     :changelists       (vec (:plan/changelists plan))
+     :describes         (when (and lookahead (pos? lookahead)) (atom {}))
      :last-change       (when (= :sync (:plan/kind plan))
                           (:plan/since-change plan))}))
 
@@ -309,12 +349,16 @@
          :or   {progress-fn (fn [_]) stop? (constantly false)}}]
   (let [opts  (:plan/options plan)
         ctx0  (initial-ctx plan {:git-handle git-handle :conn conn :ref ref})
-        final (transduce
-               (comp (take-while (fn [_] (not (stop?))))
-                     (map (fn [op] (progress-fn op) op)))
-               (completing step identity)
-               ctx0
-               (plan/operation-seq plan))]
+        final (try
+                (transduce
+                 (comp (take-while (fn [_] (not (stop?))))
+                       (map (fn [op] (progress-fn op) op)))
+                 (completing step identity)
+                 ctx0
+                 (plan/operation-seq plan))
+                (catch Throwable t
+                  (cancel-pending-describes! ctx0)
+                  (throw t)))]
     (when (:emit-labels? opts)
       (emit-labels! final (:plan/changelists plan)))
     final))

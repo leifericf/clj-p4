@@ -59,9 +59,9 @@
               :target "/tmp/x"
               :options {:checkpoint-every 1000}})
         ops (vec (plan/operation-seq p))]
-    (is (= [{:op/kind :process-change :op/change 100}
-            {:op/kind :process-change :op/change 101}
-            {:op/kind :process-change :op/change 102}
+    (is (= [{:op/kind :process-change :op/change 100 :op/idx 0}
+            {:op/kind :process-change :op/change 101 :op/idx 1}
+            {:op/kind :process-change :op/change 102 :op/idx 2}
             {:op/kind :checkpoint     :op/last-change 102}]
            ops))))
 
@@ -72,14 +72,14 @@
               :target "/tmp/x"
               :options {:checkpoint-every 2}})
         ops (vec (plan/operation-seq p))]
-    (is (= [{:op/kind :process-change :op/change 1}
-            {:op/kind :process-change :op/change 2}
+    (is (= [{:op/kind :process-change :op/change 1 :op/idx 0}
+            {:op/kind :process-change :op/change 2 :op/idx 1}
             {:op/kind :checkpoint     :op/last-change 2}
-            {:op/kind :process-change :op/change 3}
-            {:op/kind :process-change :op/change 4}
+            {:op/kind :process-change :op/change 3 :op/idx 2}
+            {:op/kind :process-change :op/change 4 :op/idx 3}
             {:op/kind :checkpoint     :op/last-change 4}
-            {:op/kind :process-change :op/change 5}
-            {:op/kind :process-change :op/change 6}
+            {:op/kind :process-change :op/change 5 :op/idx 4}
+            {:op/kind :process-change :op/change 6 :op/idx 5}
             {:op/kind :checkpoint     :op/last-change 6}]
            ops))))
 
