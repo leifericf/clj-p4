@@ -67,24 +67,72 @@
     (git/blob! git-handle mark (.toByteArray baos))
     {:op :M :mode (file-mode fr) :mark mark :path local}))
 
+(defn- pair-moves
+  "Pair `:move/delete` and `:move/add` entries in `files` by `:rev/moved-file`.
+   Returns `{:pairs {<add-depot> <delete-fr>} :paired #{<depot>...}}` —
+   `paired` lists every depot path absorbed into a pair (so the main
+   loop can skip those). When a pair's partner is missing (e.g. one
+   side was filtered out by the view), neither end is paired."
+  [files]
+  (let [add-by-source    (->> files
+                              (filter #(= :move/add (:rev/action %)))
+                              (filter :rev/moved-file)
+                              (map (juxt :rev/moved-file identity))
+                              (into {}))
+        delete-by-depot  (->> files
+                              (filter #(= :move/delete (:rev/action %)))
+                              (map (juxt :rev/depot identity))
+                              (into {}))
+        pairs (->> add-by-source
+                   (keep (fn [[delete-depot add-fr]]
+                           (when-let [del-fr (get delete-by-depot delete-depot)]
+                             [(:rev/depot add-fr) {:add-fr add-fr
+                                                   :delete-fr del-fr}])))
+                   (into {}))
+        paired (reduce-kv (fn [acc add-depot {:keys [delete-fr]}]
+                            (-> acc
+                                (conj add-depot)
+                                (conj (:rev/depot delete-fr))))
+                          #{} pairs)]
+    {:pairs pairs :paired paired}))
+
 (defn- file-ops-for-change
   "Build the ordered vector of fast-import file ops for one change.
-   Files that map to no local path (excluded/ignored/no-match) are skipped."
+   Files that map to no local path (excluded/ignored/no-match) are skipped.
+   move/delete + move/add pairs collapse into a single `R` rename op."
   [ctx {:keys [p4/change p4/files]}]
-  (loop [out [], i 0, fs files]
-    (if-let [fr (first fs)]
-      (let [local (map-rev->local ctx fr)]
-        (cond
-          (nil? local)
-          (recur out (inc i) (rest fs))
+  (let [{:keys [pairs paired]} (pair-moves files)]
+    (loop [out [], i 0, fs files]
+      (if-let [fr (first fs)]
+        (let [depot (:rev/depot fr)
+              local (map-rev->local ctx fr)]
+          (cond
+            (nil? local)
+            (recur out (inc i) (rest fs))
 
-          (#{:delete :move/delete} (:rev/action fr))
-          (recur (conj out {:op :D :path local}) (inc i) (rest fs))
+            (and (= :move/add (:rev/action fr))
+                 (contains? pairs depot))
+            (let [{:keys [delete-fr]} (get pairs depot)
+                  old-local (map-rev->local ctx delete-fr)]
+              (if (and old-local (not= old-local local))
+                (recur (conj out {:op :R :from old-local :to local})
+                       (inc i) (rest fs))
+                ;; partner mapped out by view — fall back to plain modify
+                (recur (conj out (emit-blob-and-modify! ctx change i fr local))
+                       (inc i) (rest fs))))
 
-          :else
-          (recur (conj out (emit-blob-and-modify! ctx change i fr local))
-                 (inc i) (rest fs))))
-      out)))
+            (and (= :move/delete (:rev/action fr))
+                 (contains? paired depot))
+            ;; Already absorbed by the partner :move/add as `R`.
+            (recur out (inc i) (rest fs))
+
+            (#{:delete :move/delete} (:rev/action fr))
+            (recur (conj out {:op :D :path local}) (inc i) (rest fs))
+
+            :else
+            (recur (conj out (emit-blob-and-modify! ctx change i fr local))
+                   (inc i) (rest fs))))
+        out))))
 
 (defn- p4-trailer
   "Format the git-p4-compatible commit trailer. Uses the stream name the

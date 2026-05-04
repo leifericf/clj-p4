@@ -368,6 +368,54 @@
             (is (not (str/includes? listing "drop.bin"))))))
       (finally (rm-rf d)))))
 
+(deftest move-pair-emits-single-rename-test
+  (testing "move/delete + move/add pair collapse to a single R rename"
+    (let [d (tmp-dir)
+          ;; CL 100 adds src/old.txt; CL 101 moves it to src/new.txt
+          cl1 {:p4/change 100 :p4/user "x" :p4/time 0 :p4/desc "add"
+               :p4/stream "//stream/main"
+               :p4/files [{:rev/depot "//stream/main/src/old.txt" :rev/rev 1
+                           :rev/action :add :rev/type :text
+                           :rev/flags #{} :rev/keyword-flags #{}}]}
+          cl2 {:p4/change 101 :p4/user "x" :p4/time 1000 :p4/desc "rename"
+               :p4/stream "//stream/main"
+               :p4/files [{:rev/depot "//stream/main/src/old.txt" :rev/rev 2
+                           :rev/action :move/delete :rev/type :text
+                           :rev/flags #{} :rev/keyword-flags #{}
+                           :rev/moved-file "//stream/main/src/new.txt"}
+                          {:rev/depot "//stream/main/src/new.txt" :rev/rev 1
+                           :rev/action :move/add :rev/type :text
+                           :rev/flags #{} :rev/keyword-flags #{}
+                           :rev/moved-file "//stream/main/src/old.txt"}]}]
+      (try
+        (with-redefs [p4/info         (constantly info-2024)
+                      p4/stream-chain (constantly [mainline])
+                      p4/changes      (fn [_ _ & _] [{:p4/change 100}
+                                                     {:p4/change 101}])
+                      p4/describe     (fn [_ n] (case n 100 cl1 101 cl2))
+                      p4/print-bytes! print-bytes-stub]
+          (let [target (str (io/file d "repo"))]
+            (api/clone! {:conn   {:p4/port "h:1666"}
+                         :stream "//stream/main"
+                         :target target})
+            (testing "tree shows src/new.txt and not src/old.txt"
+              (let [{:keys [stdout-bytes]}
+                    (proc/run-checked! ["git" "-C" target "ls-tree" "-r"
+                                        "refs/heads/main"])
+                    listing (String. ^bytes stdout-bytes "UTF-8")]
+                (is (str/includes? listing "src/new.txt"))
+                (is (not (str/includes? listing "src/old.txt")))))
+            (testing "git records the rename via --follow"
+              (let [{:keys [stdout-bytes]}
+                    (proc/run-checked!
+                     ["git" "-C" target "log" "--diff-filter=R"
+                      "--name-status" "refs/heads/main"])
+                    out (String. ^bytes stdout-bytes "UTF-8")]
+                (is (str/includes? out "R"))
+                (is (str/includes? out "old.txt"))
+                (is (str/includes? out "new.txt"))))))
+        (finally (rm-rf d))))))
+
 (deftest delete-action-test
   (let [d (tmp-dir)
         cl1 {:p4/change 100 :p4/user "x" :p4/time 0 :p4/desc "add"

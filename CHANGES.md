@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.4.0-alpha
+
+Read-direction parity step 3 of 6: rename pairs now travel as renames in git history.
+
+### Added
+
+- **Move-pair grouping.** A `move/delete` + `move/add` pair within the same changelist now produces a single fast-import `R old new` rename op instead of separate `D old` + `M new`. This makes `git log --follow <renamed-path>` work — and matches `p4-fusion`'s behaviour. `parse-describe` extracts the `movedFile<n>` field from `p4 describe -G` so pairs are identified by the server-supplied partner attribute, not heuristics. If only one half of the pair survives the view filter (e.g. the destination is excluded), the surviving half falls back to a plain `D` or `M` so nothing is silently dropped.
+
+### Notes
+
+- The roadmap's `--noMerge` / integrate-as-2-parent-merge feature is **deferred to a later release.** Reliable merge detection requires per-file `p4 integrated -F` lookups, which materially impact clone time on large changelists; landing it correctly needs the parallel-fetch infrastructure that's still pending. Until then, integrations remain visible only as the file-level `:integrate` actions in commit metadata, and history stays linear.
+
 ## 0.3.0-alpha
 
 Read-direction parity step 2 of 6: classic (non-stream) depot paths and per-command retries.

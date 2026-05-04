@@ -149,13 +149,15 @@
   (let [k       #(get record (str % idx))
         type-m  (parse-file-type (k "type"))
         size-s  (k "fileSize")
-        rev-s   (k "rev")]
+        rev-s   (k "rev")
+        moved   (k "movedFile")]
     (cond-> (merge type-m
                    {:rev/depot  (k "depotFile")
                     :rev/action (action->kw (k "action"))})
-      rev-s   (assoc :rev/rev    (parse-long rev-s))
+      rev-s        (assoc :rev/rev    (parse-long rev-s))
       (k "digest") (assoc :rev/digest (k "digest"))
-      size-s  (assoc :rev/size   (parse-long size-s)))))
+      size-s       (assoc :rev/size   (parse-long size-s))
+      moved        (assoc :rev/moved-file moved))))
 
 (defn- file-indices
   "Indices `n` for which `depotFile<n>` exists in `record`, sorted."
