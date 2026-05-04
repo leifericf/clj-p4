@@ -518,6 +518,97 @@
                               :max-print-bytes 100})))))
         (finally (rm-rf d))))))
 
+(deftest user-map-overrides-author-test
+  (testing ":user-map sets the committer name + email"
+    (let [d (tmp-dir)]
+      (try
+        (with-redefs [p4/info         (constantly info-2024)
+                      p4/stream-chain (constantly [mainline])
+                      p4/changes      (fn [_ _ & _] [{:p4/change 100}])
+                      p4/describe     (constantly (describe-fixture 100))
+                      p4/print-bytes! print-bytes-stub]
+          (let [target (str (io/file d "repo"))]
+            (api/clone! {:conn   {:p4/port "h:1666"}
+                         :stream "//stream/main"
+                         :target target
+                         :user-map {"alice" {:name "Alice Engineer"
+                                             :email "alice@example.test"}}})
+            (let [{:keys [stdout-bytes]}
+                  (proc/run-checked! ["git" "-C" target "log" "-1"
+                                      "--pretty=%cn <%ce>" "refs/heads/main"])
+                  out (String. ^bytes stdout-bytes "UTF-8")]
+              (is (str/includes? out "Alice Engineer"))
+              (is (str/includes? out "alice@example.test")))))
+        (finally (rm-rf d))))))
+
+(deftest user-map-falls-back-to-perforce-email-test
+  (testing "users not in :user-map keep the default <user>@perforce email"
+    (let [d (tmp-dir)]
+      (try
+        (with-redefs [p4/info         (constantly info-2024)
+                      p4/stream-chain (constantly [mainline])
+                      p4/changes      (fn [_ _ & _] [{:p4/change 100}])
+                      p4/describe     (constantly (describe-fixture 100))
+                      p4/print-bytes! print-bytes-stub]
+          (let [target (str (io/file d "repo"))]
+            (api/clone! {:conn   {:p4/port "h:1666"}
+                         :stream "//stream/main"
+                         :target target
+                         :user-map {"bob" {:name "Bob"}}})
+            (let [{:keys [stdout-bytes]}
+                  (proc/run-checked! ["git" "-C" target "log" "-1"
+                                      "--pretty=%ce" "refs/heads/main"])
+                  email (String. ^bytes stdout-bytes "UTF-8")]
+              (is (str/includes? email "alice@perforce")))))
+        (finally (rm-rf d))))))
+
+(deftest emit-labels-creates-annotated-tags-test
+  (testing ":emit-labels? makes labels referencing imported CLs become tags"
+    (let [d (tmp-dir)]
+      (try
+        (with-redefs [p4/info         (constantly info-2024)
+                      p4/stream-chain (constantly [mainline])
+                      p4/changes      (fn [_ _ & _] [{:p4/change 100}
+                                                     {:p4/change 101}])
+                      p4/describe     (fn [_ n] (describe-fixture n))
+                      p4/print-bytes! print-bytes-stub
+                      p4/labels       (fn [_ & _]
+                                        [{:label/name "v1"}
+                                         {:label/name "skip-me"}])
+                      p4/label-spec   (fn [_ name & _]
+                                        (case name
+                                          "v1"      {:label/name "v1"
+                                                     :label/revision "@100"
+                                                     :label/desc "first release"}
+                                          "skip-me" {:label/name "skip-me"
+                                                     :label/revision "@99999"
+                                                     :label/desc "out of range"}))]
+          (let [target (str (io/file d "repo"))]
+            (api/clone! {:conn   {:p4/port "h:1666"}
+                         :stream "//stream/main"
+                         :target target
+                         :emit-labels? true})
+            (testing "v1 became an annotated tag"
+              (let [{:keys [stdout-bytes]}
+                    (proc/run-checked! ["git" "-C" target "tag" "-l"])
+                    out (String. ^bytes stdout-bytes "UTF-8")]
+                (is (str/includes? out "v1"))
+                (is (not (str/includes? out "skip-me")))))
+            (testing "tag points at the labeled changelist's commit"
+              (let [{:keys [stdout-bytes]}
+                    (proc/run-checked! ["git" "-C" target "rev-list" "-1" "v1"])
+                    tag-sha (String. ^bytes stdout-bytes "UTF-8")
+                    {:keys [stdout-bytes]}
+                    (proc/run-checked! ["git" "-C" target "log" "--pretty=%H"
+                                        "--reverse" "refs/heads/main"])
+                    first-sha (-> ^bytes stdout-bytes
+                                  (String. "UTF-8")
+                                  str/trim
+                                  str/split-lines
+                                  first)]
+                (is (= (str/trim tag-sha) first-sha))))))
+        (finally (rm-rf d))))))
+
 (deftest stop-predicate-test
   (let [d (tmp-dir)]
     (try

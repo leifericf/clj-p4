@@ -166,6 +166,36 @@
          (decode mode)
          (mapv ps/parse-changelist))))
 
+(defn labels
+  "`p4 labels` → seq of `{:label/name :label/owner :label/desc :label/update}`."
+  [conn & {:keys [mode] :or {mode :G}}]
+  (let [recs (->> (run-p4! conn (with-mode-flag mode) ["labels"])
+                  (decode mode))]
+    (mapv (fn [r]
+            {:label/name   (get r "label")
+             :label/owner  (get r "Owner")
+             :label/desc   (get r "Description")
+             :label/update (get r "Update")
+             :label/access (get r "Access")
+             :label/options (get r "Options")})
+          recs)))
+
+(defn label-spec
+  "`p4 label -o <name>` → `{:label/name :label/revision :label/desc ...}`.
+   `:label/revision` is the raw `Revision:` string verbatim — callers
+   parse it (formats vary: `@<n>`, `<n>`, depot-path-with-revision)."
+  [conn label-name & {:keys [mode] :or {mode :G}}]
+  (let [r (-> (run-p4! conn (with-mode-flag mode) ["label" "-o" label-name])
+              (->> (decode mode))
+              first)]
+    {:label/name      (get r "Label")
+     :label/owner     (get r "Owner")
+     :label/desc      (get r "Description")
+     :label/revision  (get r "Revision")
+     :label/update    (get r "Update")
+     :label/access    (get r "Access")
+     :label/options   (get r "Options")}))
+
 (defn describe
   "`p4 describe -s <change>` → ChangelistRecord with `:p4/files` populated."
   [conn change & {:keys [mode] :or {mode :G}}]

@@ -204,19 +204,24 @@
       (str desc "\n\n" (p4-trailer stream-name cl)))))
 
 (defn- committer-of
-  [cl]
-  {:name    (or (:p4/user cl) "unknown")
-   :email   (str (or (:p4/user cl) "unknown") "@perforce")
-   :time-ms (or (:p4/time cl) 0)
-   :tz      "+0000"})
+  "Build the committer record for a changelist. When `user-map` carries
+   an entry for `(:p4/user cl)`, use that entry's `:name` and `:email`;
+   otherwise fall back to `<user>@perforce`."
+  [user-map cl]
+  (let [user   (or (:p4/user cl) "unknown")
+        mapped (get user-map user)]
+    {:name    (or (:name mapped) user)
+     :email   (or (:email mapped) (str user "@perforce"))
+     :time-ms (or (:p4/time cl) 0)
+     :tz      "+0000"}))
 
 (defn- emit-change!
-  [{:keys [git-handle ref last-change stream-name] :as ctx} change-num]
+  [{:keys [git-handle ref last-change stream-name user-map] :as ctx} change-num]
   (let [cl     (p4/describe (:conn ctx) change-num)
         ops    (file-ops-for-change ctx cl)
         commit {:ref       ref
                 :mark      (:p4/change cl)
-                :committer (committer-of cl)
+                :committer (committer-of user-map cl)
                 :message   (commit-message stream-name cl)
                 :files     ops}
         commit (cond-> commit
@@ -247,8 +252,43 @@
      :ref               (or ref "refs/heads/main")
      :fetch-parallelism (:fetch-parallelism opts)
      :max-print-bytes   (:max-print-bytes opts)
+     :user-map          (:user-map opts)
      :last-change       (when (= :sync (:plan/kind plan))
                           (:plan/since-change plan))}))
+
+(defn- parse-revision-change
+  "Pull a changelist number out of a label's `Revision:` field. Common
+   shapes: `@1234`, `1234`, `//depot/foo/...@1234`. Returns nil if the
+   revision can't be coerced to a single change number."
+  [^String rev]
+  (when rev
+    (when-let [[_ n] (re-find #"@?(\d+)\s*$" (str/trim rev))]
+      (parse-long n))))
+
+(defn- emit-labels!
+  "After the main import, walk `p4 labels`, fetch each spec via
+   `p4 label -o`, and emit a fast-import tag block for any label whose
+   `Revision:` resolves to a changelist number we just imported. Labels
+   that point at unimported or unparseable revisions are skipped
+   silently (a label can legitimately tag a single file revision rather
+   than a whole CL)."
+  [{:keys [git-handle conn ref] :as ctx} imported-changes]
+  (let [imported (set imported-changes)
+        labels   (try (p4/labels conn) (catch Exception _ []))]
+    (doseq [{:label/keys [name]} labels
+            :when name
+            :let [spec   (try (p4/label-spec conn name) (catch Exception _ nil))
+                  change (parse-revision-change (:label/revision spec))]
+            :when (and change (contains? imported change))]
+      (git/emit-tag! git-handle
+                     {:name name
+                      :from (str ":" change)
+                      :tagger {:name    "clj-p4"
+                               :email   "clj-p4@local"
+                               :time-ms 0
+                               :tz      "+0000"}
+                      :message (or (:label/desc spec) name)}))
+    ctx))
 
 (defn execute!
   "Execute `plan` against a populated git repo at `(:plan/target plan)`.
@@ -260,12 +300,21 @@
    Optional:
      :ref         git ref to write to (default `refs/heads/main`).
      :progress-fn `(fn [op])` — invoked before each op.
-     :stop?       `(fn [])` — predicate; when true, halt after current op."
+     :stop?       `(fn [])` — predicate; when true, halt after current op.
+
+   When `:emit-labels?` is true on `(:plan/options plan)`, walks
+   `p4 labels` after the main import and emits annotated git tags for
+   any label whose `Revision:` resolves to an imported changelist."
   [plan {:keys [git-handle conn ref progress-fn stop?]
          :or   {progress-fn (fn [_]) stop? (constantly false)}}]
-  (transduce
-   (comp (take-while (fn [_] (not (stop?))))
-         (map (fn [op] (progress-fn op) op)))
-   (completing step identity)
-   (initial-ctx plan {:git-handle git-handle :conn conn :ref ref})
-   (plan/operation-seq plan)))
+  (let [opts  (:plan/options plan)
+        ctx0  (initial-ctx plan {:git-handle git-handle :conn conn :ref ref})
+        final (transduce
+               (comp (take-while (fn [_] (not (stop?))))
+                     (map (fn [op] (progress-fn op) op)))
+               (completing step identity)
+               ctx0
+               (plan/operation-seq plan))]
+    (when (:emit-labels? opts)
+      (emit-labels! final (:plan/changelists plan)))
+    final))

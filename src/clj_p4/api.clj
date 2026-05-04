@@ -161,7 +161,7 @@
    ephemeral client whose `View:` maps the depot path to the client root,
    runs the import, tears the client down."
   [{:keys [conn stream target classic-stream mode max-changes exclude
-           fetch-parallelism max-print-bytes
+           fetch-parallelism max-print-bytes user-map emit-labels?
            ref progress-fn stop?]}]
   (p4/with-classic-client
     conn stream
@@ -182,7 +182,9 @@
                           :options      (cond-> {:max-changes max-changes
                                                  :checkpoint-every 1000}
                                           fetch-parallelism (assoc :fetch-parallelism fetch-parallelism)
-                                          max-print-bytes   (assoc :max-print-bytes max-print-bytes))})]
+                                          max-print-bytes   (assoc :max-print-bytes max-print-bytes)
+                                          user-map          (assoc :user-map user-map)
+                                          emit-labels?      (assoc :emit-labels? emit-labels?))})]
         (git/init-bare! target)
         (let [final (run-fast-import! plan-val target eph-conn ref
                                       progress-fn stop?)]
@@ -195,7 +197,7 @@
    Creates the client, builds the view from the server-filled `View:`
    block, runs the import, tears the client down."
   [{:keys [conn stream target chain mode max-changes exclude
-           fetch-parallelism max-print-bytes
+           fetch-parallelism max-print-bytes user-map emit-labels?
            ref progress-fn stop?]}]
   (p4/with-ephemeral-client
     conn stream
@@ -214,7 +216,9 @@
                           :options      (cond-> {:max-changes max-changes
                                                  :checkpoint-every 1000}
                                           fetch-parallelism (assoc :fetch-parallelism fetch-parallelism)
-                                          max-print-bytes   (assoc :max-print-bytes max-print-bytes))})]
+                                          max-print-bytes   (assoc :max-print-bytes max-print-bytes)
+                                          user-map          (assoc :user-map user-map)
+                                          emit-labels?      (assoc :emit-labels? emit-labels?))})]
         (git/init-bare! target)
         (let [final (run-fast-import! plan-val target eph-conn ref
                                       progress-fn stop?)]
@@ -227,7 +231,7 @@
    development, release). The view comes from the parent-chain
    merge."
   [{:keys [conn stream target chain mode max-changes exclude
-           fetch-parallelism max-print-bytes
+           fetch-parallelism max-print-bytes user-map emit-labels?
            ref progress-fn stop?]}]
   (let [changes  (resolve-changes conn (str stream "/...")
                                   {:max-changes max-changes} mode)
@@ -240,7 +244,9 @@
                    :options      (cond-> {:max-changes max-changes
                                           :checkpoint-every 1000}
                                    fetch-parallelism (assoc :fetch-parallelism fetch-parallelism)
-                                   max-print-bytes   (assoc :max-print-bytes max-print-bytes))})]
+                                   max-print-bytes   (assoc :max-print-bytes max-print-bytes)
+                                   user-map          (assoc :user-map user-map)
+                                   emit-labels?      (assoc :emit-labels? emit-labels?))})]
     (git/init-bare! target)
     (let [final (run-fast-import! plan-val target conn ref progress-fn stop?)]
       {:target      target
@@ -281,7 +287,7 @@
    noclobber locked`). The `git-p4:` trailer always carries the
    user-supplied source path, not the ephemeral client name."
   [{:keys [conn stream target ref max-changes exclude
-           fetch-parallelism max-print-bytes
+           fetch-parallelism max-print-bytes user-map emit-labels?
            progress-fn stop?]
     :or   {ref         "refs/heads/main"
            progress-fn (fn [_])
@@ -295,6 +301,8 @@
                      :max-changes max-changes :exclude exclude
                      :fetch-parallelism fetch-parallelism
                      :max-print-bytes   max-print-bytes
+                     :user-map          user-map
+                     :emit-labels?      emit-labels?
                      :ref ref :progress-fn progress-fn :stop? stop?}
               chain          (assoc :chain chain)
               classic-stream (assoc :classic-stream classic-stream))]
@@ -328,10 +336,11 @@
      :last-change  (change-from-trailer (last-trailer-message target ref))}))
 
 (defn- sync-options
-  [{:keys [fetch-parallelism max-print-bytes]}]
+  [{:keys [fetch-parallelism max-print-bytes user-map]}]
   (cond-> {:checkpoint-every 1000}
     fetch-parallelism (assoc :fetch-parallelism fetch-parallelism)
-    max-print-bytes   (assoc :max-print-bytes max-print-bytes)))
+    max-print-bytes   (assoc :max-print-bytes max-print-bytes)
+    user-map          (assoc :user-map user-map)))
 
 (defn- sync-via-ephemeral!
   [{:keys [conn stream target chain mode since exclude
@@ -416,7 +425,7 @@
    are routed through the same auto-managed ephemeral-client path as
    `clone!`."
   [{:keys [conn stream target ref exclude
-           fetch-parallelism max-print-bytes
+           fetch-parallelism max-print-bytes user-map
            progress-fn stop?]
     :or   {ref         "refs/heads/main"
            progress-fn (fn [_])
@@ -431,6 +440,7 @@
                        :exclude exclude
                        :fetch-parallelism fetch-parallelism
                        :max-print-bytes   max-print-bytes
+                       :user-map          user-map
                        :ref ref :progress-fn progress-fn :stop? stop?}
                 chain          (assoc :chain chain)
                 classic-stream (assoc :classic-stream classic-stream))]

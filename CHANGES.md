@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.6.0-alpha
+
+Read-direction parity step 5 of 6: author mapping (P4 user → real name + email) and labels-as-annotated-tags. Both are wins over `p4-fusion`, which uses raw P4 usernames and ignores labels.
+
+### Added
+
+- **`:user-map` option on `clone!` / `sync!`.** Map of `p4-username → {:name :email}`; consulted when shaping each commit's `committer` line. Users not in the map keep the previous default `<user>@perforce` email and use the raw username as the name. Matches the spirit of `git-p4`'s `git-p4.mapUser` config and goes beyond `p4-fusion` (which uses the raw P4 username everywhere).
+- **`:emit-labels?` option on `clone!` / `sync!`.** When true, walks `p4 labels` after the main import, fetches each spec via `p4 label -o`, and creates an annotated git tag for any label whose `Revision:` resolves to a changelist we just imported. Labels referencing unimported changes or unparseable revisions (e.g. file-revision-style `//depot/foo#3` rather than a CL) are skipped silently. Both `labels` and `label -o` are on the read-only allowlist landed in 0.2.0-alpha.
+- **`clj-p4.shell.git/emit-tag!`** plus `clj-p4.shell.p4/labels` and `label-spec` — the wire functions that the new option surface relies on.
+
+### Notes
+
+- The roadmap's multi-stream / multi-ref single-repo feature (`:streams [s1 s2 ...]` producing parallel branches in one bare repo) is **deferred to a later release.** It cuts across the executor's per-stream view, the marks-file lifecycle, and the trailer's depot-paths field; landing it correctly is its own design pass and is decoupled from the metadata-fidelity wins shipping here.
+
 ## 0.5.0-alpha
 
 Read-direction parity step 4 of 6: parallel `p4 print` per changelist, per-file size cap, and a fix that ensures move+edit commits keep the new content.

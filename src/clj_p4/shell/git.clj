@@ -116,6 +116,21 @@
   [handle]
   (write-line! handle "checkpoint"))
 
+(defn- format-tagger
+  [{:keys [name email time-ms tz]}]
+  (let [secs (long (/ (or time-ms 0) 1000))]
+    (str "tagger " (or name "clj-p4") " <" (or email "clj-p4@local") "> "
+         secs " " (or tz "+0000"))))
+
+(defn emit-tag!
+  "Emit an annotated tag through fast-import. `from` is `:<mark>` or a
+   ref/SHA. `tagger` shape mirrors `:committer` on `emit-commit!`."
+  [handle {:keys [name from tagger message]}]
+  (write-line! handle (str "tag " name))
+  (write-line! handle (str "from " from))
+  (write-line! handle (format-tagger tagger))
+  (write-data-block! handle (.getBytes ^String (or message "") "UTF-8")))
+
 (defn fast-import-close!
   "Send `done`, close stdin, wait for exit. Returns `{:exit :stderr}`."
   [handle]
