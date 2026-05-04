@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+
+- `clj-p4.schema` — malli schemas for the parser-output domain records
+  (`changelist-record`, `file-rev`, `stream-spec`, `server-info`),
+  `connection-spec`, and the public `clone!` / `sync!` option maps.
+  Also exports `record-transformer` for declarative wire-format
+  coercion (string→long, string→keyword, epoch-seconds→ms,
+  `\"enabled\"`→boolean). Distinct from `clj-p4.spec`, which keeps its
+  hand-rolled depot-path predicates.
+
 ### Fixed
 
 - `:fetch-parallelism` now actually bounds concurrency. The two parallel
