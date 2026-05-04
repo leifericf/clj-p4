@@ -161,6 +161,7 @@
    ephemeral client whose `View:` maps the depot path to the client root,
    runs the import, tears the client down."
   [{:keys [conn stream target classic-stream mode max-changes exclude
+           fetch-parallelism max-print-bytes
            ref progress-fn stop?]}]
   (p4/with-classic-client
     conn stream
@@ -178,8 +179,10 @@
                           :target       target
                           :view         view-val
                           :excludes     exclude
-                          :options      {:max-changes max-changes
-                                         :checkpoint-every 1000}})]
+                          :options      (cond-> {:max-changes max-changes
+                                                 :checkpoint-every 1000}
+                                          fetch-parallelism (assoc :fetch-parallelism fetch-parallelism)
+                                          max-print-bytes   (assoc :max-print-bytes max-print-bytes))})]
         (git/init-bare! target)
         (let [final (run-fast-import! plan-val target eph-conn ref
                                       progress-fn stop?)]
@@ -192,6 +195,7 @@
    Creates the client, builds the view from the server-filled `View:`
    block, runs the import, tears the client down."
   [{:keys [conn stream target chain mode max-changes exclude
+           fetch-parallelism max-print-bytes
            ref progress-fn stop?]}]
   (p4/with-ephemeral-client
     conn stream
@@ -207,8 +211,10 @@
                           :target       target
                           :view         view-val
                           :excludes     exclude
-                          :options      {:max-changes max-changes
-                                         :checkpoint-every 1000}})]
+                          :options      (cond-> {:max-changes max-changes
+                                                 :checkpoint-every 1000}
+                                          fetch-parallelism (assoc :fetch-parallelism fetch-parallelism)
+                                          max-print-bytes   (assoc :max-print-bytes max-print-bytes))})]
         (git/init-bare! target)
         (let [final (run-fast-import! plan-val target eph-conn ref
                                       progress-fn stop?)]
@@ -221,6 +227,7 @@
    development, release). The view comes from the parent-chain
    merge."
   [{:keys [conn stream target chain mode max-changes exclude
+           fetch-parallelism max-print-bytes
            ref progress-fn stop?]}]
   (let [changes  (resolve-changes conn (str stream "/...")
                                   {:max-changes max-changes} mode)
@@ -230,8 +237,10 @@
                    :changelists  changes
                    :target       target
                    :excludes     exclude
-                   :options      {:max-changes max-changes
-                                  :checkpoint-every 1000}})]
+                   :options      (cond-> {:max-changes max-changes
+                                          :checkpoint-every 1000}
+                                   fetch-parallelism (assoc :fetch-parallelism fetch-parallelism)
+                                   max-print-bytes   (assoc :max-print-bytes max-print-bytes))})]
     (git/init-bare! target)
     (let [final (run-fast-import! plan-val target conn ref progress-fn stop?)]
       {:target      target
@@ -254,11 +263,13 @@
      :target       absolute path for the new bare repo
 
    Optional:
-     :ref          target ref (default `refs/heads/main`)
-     :max-changes  cap on changelists imported
-     :exclude      compiled exclude patterns (vector of `[pat re]`)
-     :progress-fn  `(fn [op])` — invoked before each op
-     :stop?        `(fn [])` — abort predicate
+     :ref               target ref (default `refs/heads/main`)
+     :max-changes       cap on changelists imported
+     :exclude           compiled exclude patterns (vector of `[pat re]`)
+     :fetch-parallelism N parallel `p4 print` calls per changelist (1 = sequential)
+     :max-print-bytes   cap on per-file `p4 print` size; throws above
+     :progress-fn       `(fn [op])` — invoked before each op
+     :stop?             `(fn [])` — abort predicate
 
    Returns `{:target :commits :last-change}`.
 
@@ -270,6 +281,7 @@
    noclobber locked`). The `git-p4:` trailer always carries the
    user-supplied source path, not the ephemeral client name."
   [{:keys [conn stream target ref max-changes exclude
+           fetch-parallelism max-print-bytes
            progress-fn stop?]
     :or   {ref         "refs/heads/main"
            progress-fn (fn [_])
@@ -281,6 +293,8 @@
         ctx (cond-> {:conn conn :stream stream :target target
                      :mode mode
                      :max-changes max-changes :exclude exclude
+                     :fetch-parallelism fetch-parallelism
+                     :max-print-bytes   max-print-bytes
                      :ref ref :progress-fn progress-fn :stop? stop?}
               chain          (assoc :chain chain)
               classic-stream (assoc :classic-stream classic-stream))]
@@ -313,9 +327,15 @@
      :commit-count (count shas)
      :last-change  (change-from-trailer (last-trailer-message target ref))}))
 
+(defn- sync-options
+  [{:keys [fetch-parallelism max-print-bytes]}]
+  (cond-> {:checkpoint-every 1000}
+    fetch-parallelism (assoc :fetch-parallelism fetch-parallelism)
+    max-print-bytes   (assoc :max-print-bytes max-print-bytes)))
+
 (defn- sync-via-ephemeral!
   [{:keys [conn stream target chain mode since exclude
-           ref progress-fn stop?]}]
+           ref progress-fn stop?] :as ctx}]
   (p4/with-ephemeral-client
     conn stream
     (fn [eph-conn {:client/keys [name view-lines]}]
@@ -333,14 +353,14 @@
                            :view         view-val
                            :excludes     exclude
                            :since-change since
-                           :options      {:checkpoint-every 1000}})]
+                           :options      (sync-options ctx)})]
             (run-fast-import! plan-val target eph-conn ref progress-fn stop?)
             (assoc (repo-state target :ref ref)
                    :synced (count new-changes))))))))
 
 (defn- sync-direct!
   [{:keys [conn stream target chain mode since exclude
-           ref progress-fn stop?]}]
+           ref progress-fn stop?] :as ctx}]
   (let [new-changes (resolve-changes conn (str stream "/...")
                                      {:since (inc since)} mode)]
     (if (empty? new-changes)
@@ -352,14 +372,14 @@
                        :target       target
                        :excludes     exclude
                        :since-change since
-                       :options      {:checkpoint-every 1000}})]
+                       :options      (sync-options ctx)})]
         (run-fast-import! plan-val target conn ref progress-fn stop?)
         (assoc (repo-state target :ref ref)
                :synced (count new-changes))))))
 
 (defn- sync-via-classic!
   [{:keys [conn stream target classic-stream mode since exclude
-           ref progress-fn stop?]}]
+           ref progress-fn stop?] :as ctx}]
   (p4/with-classic-client
     conn stream
     (fn [eph-conn {:client/keys [name view-lines]}]
@@ -379,7 +399,7 @@
                            :view         view-val
                            :excludes     exclude
                            :since-change since
-                           :options      {:checkpoint-every 1000}})]
+                           :options      (sync-options ctx)})]
             (run-fast-import! plan-val target eph-conn ref progress-fn stop?)
             (assoc (repo-state target :ref ref)
                    :synced (count new-changes))))))))
@@ -395,7 +415,9 @@
    Optional: same as `clone!`. Virtual streams and classic depot paths
    are routed through the same auto-managed ephemeral-client path as
    `clone!`."
-  [{:keys [conn stream target ref exclude progress-fn stop?]
+  [{:keys [conn stream target ref exclude
+           fetch-parallelism max-print-bytes
+           progress-fn stop?]
     :or   {ref         "refs/heads/main"
            progress-fn (fn [_])
            stop?       (constantly false)}}]
@@ -407,6 +429,8 @@
         ctx   (cond-> {:conn conn :stream stream :target target
                        :mode mode :since since
                        :exclude exclude
+                       :fetch-parallelism fetch-parallelism
+                       :max-print-bytes   max-print-bytes
                        :ref ref :progress-fn progress-fn :stop? stop?}
                 chain          (assoc :chain chain)
                 classic-stream (assoc :classic-stream classic-stream))]

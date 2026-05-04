@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+## 0.5.0-alpha
+
+Read-direction parity step 4 of 6: parallel `p4 print` per changelist, per-file size cap, and a fix that ensures move+edit commits keep the new content.
+
+### Added
+
+- **`:fetch-parallelism N` option on `clone!` / `sync!`.** When > 1, the executor fans out per-changelist `p4 print` calls across N parallel workers via `pmap` before serialising blob writes into the single fast-import stdin. Sequential by default (the change is opt-in). Mirrors `p4-fusion`'s `--networkThreads`.
+- **`:max-print-bytes N` option on `clone!` / `sync!`.** Hard upper bound on bytes pulled from any single `p4 print` invocation. Replaces the old tacit-OOM behaviour for pathologically large files; throws `:clj-p4/error :max-print-bytes-exceeded` with the offending depot path so the caller can choose to skip or raise the cap.
+
+### Changed
+
+- **Executor refactored into three explicit phases per changelist:** `materialize-ops` (pure — decides the shape of every fast-import op without I/O), `fetch-blobs!` (the parallelisable I/O fan-out), `emit-ops!` (serial blob writes + commit-shape construction). Sequential behaviour is unchanged.
+
+### Fixed
+
+- **Move + edit commits no longer drop the new content.** v0.4.0's move-pair grouping emitted a single `R old new` rename op, which is correct for content-preserving moves but loses the new revision's bytes when a `p4 move` was followed by an edit in the same changelist. The executor now emits `R old new` followed by `M mode mark new`, so git's tree always reflects the move/add revision's content. The redundant `M` is harmless when content was preserved.
+
+### Notes
+
+- The roadmap's `:print-batch-size` (`p4-fusion`'s `--printBatch`) and `:lookahead` features are deferred to a later release. Per-file `p4 print` parallelism captures most of the wall-time gain on the multi-file-per-CL workload that motivated the roadmap entry; the batched-print and lookahead optimisations are second-order wins that can land independently once benchmarks are in place.
+
 ## 0.4.0-alpha
 
 Read-direction parity step 3 of 6: rename pairs now travel as renames in git history.

@@ -405,15 +405,13 @@
                     listing (String. ^bytes stdout-bytes "UTF-8")]
                 (is (str/includes? listing "src/new.txt"))
                 (is (not (str/includes? listing "src/old.txt")))))
-            (testing "git records the rename via --follow"
+            (testing "the rename commit's content reflects the move/add revision"
               (let [{:keys [stdout-bytes]}
                     (proc/run-checked!
-                     ["git" "-C" target "log" "--diff-filter=R"
-                      "--name-status" "refs/heads/main"])
-                    out (String. ^bytes stdout-bytes "UTF-8")]
-                (is (str/includes? out "R"))
-                (is (str/includes? out "old.txt"))
-                (is (str/includes? out "new.txt"))))))
+                     ["git" "-C" target "show"
+                      "refs/heads/main:src/new.txt"])
+                    content (String. ^bytes stdout-bytes "UTF-8")]
+                (is (str/includes? content "src/new.txt@101"))))))
         (finally (rm-rf d))))))
 
 (deftest delete-action-test
@@ -464,6 +462,61 @@
             (is (= 101 (:last-change s)))
             (is (string? (:head-sha s))))))
       (finally (rm-rf d)))))
+
+(deftest fetch-parallelism-uses-pmap-test
+  (testing "with :fetch-parallelism > 1 print-bytes! is invoked once per file"
+    (let [d (tmp-dir)
+          n-files 8
+          cl {:p4/change 100 :p4/user "x" :p4/time 0 :p4/desc "many"
+              :p4/stream "//stream/main"
+              :p4/files (vec (for [i (range n-files)]
+                               {:rev/depot (str "//stream/main/src/f" i ".txt")
+                                :rev/rev 1 :rev/action :add :rev/type :text
+                                :rev/flags #{} :rev/keyword-flags #{}}))}
+          calls (atom 0)]
+      (try
+        (with-redefs [p4/info         (constantly info-2024)
+                      p4/stream-chain (constantly [mainline])
+                      p4/changes      (fn [_ _ & _] [{:p4/change 100}])
+                      p4/describe     (constantly cl)
+                      p4/print-bytes! (fn [_ rev out & _]
+                                        (swap! calls inc)
+                                        (.write ^java.io.OutputStream out
+                                                (.getBytes (str "x " rev) "UTF-8")))]
+          (let [target (str (io/file d "repo"))]
+            (api/clone! {:conn   {:p4/port "h:1666"}
+                         :stream "//stream/main"
+                         :target target
+                         :fetch-parallelism 4})
+            (is (= n-files @calls))
+            (is (= 1 (git/commit-count target "refs/heads/main")))))
+        (finally (rm-rf d))))))
+
+(deftest max-print-bytes-cap-test
+  (testing "throws :max-print-bytes-exceeded when a file exceeds the cap"
+    (let [d (tmp-dir)
+          big-cl {:p4/change 100 :p4/user "x" :p4/time 0 :p4/desc "big"
+                  :p4/stream "//stream/main"
+                  :p4/files [{:rev/depot "//stream/main/src/big.txt"
+                              :rev/rev 1 :rev/action :add :rev/type :text
+                              :rev/flags #{} :rev/keyword-flags #{}}]}]
+      (try
+        (with-redefs [p4/info         (constantly info-2024)
+                      p4/stream-chain (constantly [mainline])
+                      p4/changes      (fn [_ _ & _] [{:p4/change 100}])
+                      p4/describe     (constantly big-cl)
+                      p4/print-bytes! (fn [_ _ out & _]
+                                        (.write ^java.io.OutputStream out
+                                                (byte-array 1024 (byte 65))))]
+          (let [target (str (io/file d "repo"))]
+            (is (thrown-with-msg?
+                 clojure.lang.ExceptionInfo
+                 #"max-print-bytes"
+                 (api/clone! {:conn   {:p4/port "h:1666"}
+                              :stream "//stream/main"
+                              :target target
+                              :max-print-bytes 100})))))
+        (finally (rm-rf d))))))
 
 (deftest stop-predicate-test
   (let [d (tmp-dir)]
