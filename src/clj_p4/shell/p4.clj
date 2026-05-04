@@ -24,6 +24,47 @@
     client  (into ["-c" client])
     charset (into ["-C" (name charset)])))
 
+(def ^:private read-only-subcommands
+  "p4 subcommands that read state without mutating the depot."
+  #{"info" "streams" "changes" "describe" "print" "files" "fstat"
+    "integrated" "labels" "users" "protects" "where" "dirs" "sizes"})
+
+(def ^:private metadata-write-subcommands
+  "p4 subcommands that modify server metadata (specs, clients) but never
+   touch depot file state. Each maps to the set of allowed first flags;
+   `client -i` and `client -d` are necessary for ephemeral-client lifecycle."
+  {"stream" #{"-o"}
+   "client" #{"-o" "-i" "-d"}
+   "label"  #{"-o"}
+   "user"   #{"-o"}})
+
+(defn- assert-read-only!
+  "Throw `:clj-p4/error :write-direction-refused` if `cmd-args` invokes a
+   p4 subcommand outside the read-only / metadata-only allowlist."
+  [cmd-args]
+  (let [sub        (first cmd-args)
+        rest-args  (rest cmd-args)]
+    (cond
+      (contains? read-only-subcommands sub)
+      :ok
+
+      (contains? metadata-write-subcommands sub)
+      (let [allowed (get metadata-write-subcommands sub)
+            flag    (first rest-args)]
+        (when-not (contains? allowed flag)
+          (throw (ex-info (str "p4 " sub " " (or flag "<no-flag>")
+                               " refused: only " allowed " allowed")
+                          {:clj-p4/error :write-direction-refused
+                           :subcommand   sub
+                           :flag         flag
+                           :argv         (vec cmd-args)}))))
+
+      :else
+      (throw (ex-info (str "p4 " sub " refused: not in read-only allowlist")
+                      {:clj-p4/error :write-direction-refused
+                       :subcommand   sub
+                       :argv         (vec cmd-args)})))))
+
 (defn- env-with-ticket
   "Inject `P4PASSWD=<ticket>` into the env map so the subprocess can
    authenticate without an interactive login."
@@ -33,13 +74,18 @@
 
 (defn- run-p4!
   "Invoke `p4` with `mode-flag` (e.g. `[\"-G\"]` or `[\"-Mj\"]`) followed by
-   `cmd-args`. Returns raw stdout-bytes; throws on non-zero exit."
-  [conn mode-flag cmd-args]
-  (let [argv (concat ["p4"] mode-flag (conn-args conn) cmd-args)
-        opts {:env        (env-with-ticket conn)
-              :timeout-ms (:p4/timeout-ms conn)}
-        {:keys [stdout-bytes]} (proc/run-checked! (vec argv) opts)]
-    stdout-bytes))
+   `cmd-args`. Returns raw stdout-bytes; throws on non-zero exit. Refuses
+   any subcommand outside the read-only / metadata-only allowlist."
+  ([conn mode-flag cmd-args]
+   (run-p4! conn mode-flag cmd-args nil))
+  ([conn mode-flag cmd-args stdin-bytes]
+   (assert-read-only! cmd-args)
+   (let [argv (concat ["p4"] mode-flag (conn-args conn) cmd-args)
+         opts (cond-> {:env        (env-with-ticket conn)
+                       :timeout-ms (:p4/timeout-ms conn)}
+                stdin-bytes (assoc :stdin-bytes stdin-bytes))
+         {:keys [stdout-bytes]} (proc/run-checked! (vec argv) opts)]
+     stdout-bytes)))
 
 (defn- decode
   "Decode `bytes` as a record seq using the given wire mode (`:G` or `:Mj`)."
@@ -137,6 +183,7 @@
    subprocess could block on its parent's EOF."
   [conn depot-rev out-stream & {:keys [keyword-expand?]
                                 :or   {keyword-expand? true}}]
+  (assert-read-only! ["print"])
   (let [argv (cond-> (into ["p4"] (conn-args conn))
                true                   (into ["print" "-q"])
                (not keyword-expand?)  (conj "-k")
@@ -152,3 +199,92 @@
                        :stderr       stderr})))
     (.write ^java.io.OutputStream out-stream ^bytes stdout-bytes)
     {:depot-rev depot-rev :exit exit :bytes-written (alength ^bytes stdout-bytes)}))
+
+(defn- uuid8 []
+  (subs (.toString (java.util.UUID/randomUUID)) 0 8))
+
+(defn- format-client-spec
+  "Render a minimal client spec as Perforce form-text. Server fills in
+   `View:` from `Stream:` when both are absent."
+  [{:keys [client owner root stream]}]
+  (str "Client: "  client                                 "\n"
+       "Owner: "   (or owner "clj-p4")                    "\n"
+       "Root: "    root                                   "\n"
+       "Stream: "  stream                                 "\n"
+       "Options: " "noallwrite noclobber locked"          "\n"
+       "LineEnd: " "local"                                "\n"))
+
+(defn- parse-client-view-lines
+  "Pull the `View:` block out of a `p4 client -o` form-text response,
+   one entry per indented line. The block ends at the first non-indented
+   line (next field header or EOF)."
+  [^String spec-text]
+  (let [lines (str/split-lines spec-text)]
+    (loop [in-view? false, out [], xs lines]
+      (if-let [line (first xs)]
+        (cond
+          (and (not in-view?) (re-matches #"View:\s*" line))
+          (recur true out (rest xs))
+
+          (not in-view?)
+          (recur false out (rest xs))
+
+          (re-matches #"\s+\S.*" line)
+          (recur true (conj out (str/trim line)) (rest xs))
+
+          :else
+          (vec out))
+        (vec out)))))
+
+(defn create-stream-client!
+  "Create an ephemeral P4 client bound to `stream-name` via `p4 client -i`.
+   Returns `{:client/name :client/root :client/view-lines}` where
+   `:client/view-lines` is the server-filled `View:` block (one entry per
+   string). The client is created with `Options: noallwrite noclobber
+   locked` so the server itself refuses any depot-mutating operation
+   routed through it.
+
+   Caller is responsible for tearing the client down with
+   `delete-stream-client!` (or `with-ephemeral-client`)."
+  [conn stream-name & {:keys [name-prefix root-prefix mode]
+                       :or   {name-prefix "clj-p4-"
+                              root-prefix "/tmp/clj-p4-eph-"
+                              mode :G}}]
+  (let [u           (uuid8)
+        client-name (str name-prefix u)
+        root        (str root-prefix u)
+        spec        (format-client-spec {:client client-name
+                                         :owner  (:p4/user conn)
+                                         :root   root
+                                         :stream stream-name})]
+    (run-p4! conn [] ["client" "-i"] (.getBytes ^String spec "UTF-8"))
+    (let [back (run-p4! conn [] ["client" "-o" client-name])
+          spec-text (String. ^bytes back "UTF-8")]
+      {:client/name       client-name
+       :client/root       root
+       :client/view-lines (parse-client-view-lines spec-text)})))
+
+(defn delete-stream-client!
+  "Tear down an ephemeral P4 client created by `create-stream-client!`.
+   Metadata-only — does not touch any depot file. Idempotent: a missing
+   client returns silently."
+  [conn client-name]
+  (try
+    (run-p4! conn [] ["client" "-d" client-name])
+    nil
+    (catch Exception _ nil)))
+
+(defn with-ephemeral-client
+  "Create an ephemeral client bound to `stream-name`, call
+   `(f conn-with-client client-info)`, and tear the client down in a
+   `finally` block. Returns `f`'s return value.
+
+   `conn-with-client` is `conn` with `:p4/client` populated. `client-info`
+   is the map returned by `create-stream-client!` (carries
+   `:client/view-lines`)."
+  [conn stream-name f]
+  (let [{:client/keys [name] :as info} (create-stream-client! conn stream-name)]
+    (try
+      (f (assoc conn :p4/client name) info)
+      (finally
+        (delete-stream-client! conn name)))))
