@@ -41,3 +41,17 @@ jobs:
           restore-keys: ${{ runner.os }}-m2-
       - run: clojure -M:cljs -m shadow.cljs.devtools.cli compile test
       - run: node target/node-tests.js
+
+  babashka:
+    name: Babashka (pure layers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeLaGuardo/setup-clojure@13.2
+        with: {bb: latest}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-bb-m2-${{ hashFiles('bb.edn') }}
+          restore-keys: ${{ runner.os }}-bb-m2-
+      - run: bb test
