@@ -23,31 +23,46 @@ clj-p4 is strictly **P4 → Git**. It will never issue a Perforce command that m
 ```clojure
 (require '[clj-p4.api :as clj-p4])
 
-;; Stream clone — mainline / development / release / virtual all just work.
+;; Stream clone — mainline / development / release / virtual / task /
+;; sparsedev / sparserel all just work.
 (clj-p4/clone! {:conn   {:p4/port "ssl:server:1666"
                          :p4/user "alice"
                          :p4/ticket "..."
                          :p4/retries 3}
-                :stream "//stream/main"
+                :source "//stream/main"
                 :target "/tmp/main.git"
                 :fetch-parallelism 8
+                :lookahead 4
                 :max-print-bytes (* 100 1024 1024)})
 
 ;; Classic depot path — same call shape, no stream needed.
 (clj-p4/clone! {:conn   {:p4/port "ssl:server:1666" :p4/user "alice" ...}
-                :stream "//depot/legacy/src"
+                :source "//depot/legacy/src"
                 :target "/tmp/legacy.git"
                 :user-map {"alice" {:name "Alice Engineer"
                                     :email "alice@example.com"}}
                 :emit-labels? true})
 
-;; Resume / catch up after upstream changes.
-(clj-p4/sync! {:conn ... :stream "//stream/main" :target "/tmp/main.git"})
+;; Multi-source — two streams in one repo, each on its own ref.
+(clj-p4/clone! {:conn ...
+                :sources ["//stream/main" "//stream/dev"]
+                :target  "/tmp/repo.git"})
+;; → refs/heads/main and refs/heads/dev, with a shared marks file so
+;;   integrate-as-merge parents (since 0.10.0) cross stream boundaries.
 
-;; Sanity-check.
+;; Resume / catch up after upstream changes.
+(clj-p4/sync! {:conn ... :source "//stream/main" :target "/tmp/main.git"})
+
+;; Sanity-check at tip (cheap).
 (require '[clj-p4.validate :as v])
 (v/validate-tip {:conn ... :target "/tmp/main.git" :source "//stream/main"})
 ;; => {:ok? true :change 12345 :git {...} :p4 {...}}
+
+;; Byte-level deep-validate (expensive — sample subset of commits).
+(v/validate-deep! {:conn ... :target "/tmp/main.git" :source "//stream/main"
+                   :sample 10})
+;; => {:ok? true :commits-checked 10 :files-checked 4321}
+;; or {:ok? false :divergence {:commit ... :path ... :git-sha ... :p4-sha ...} ...}
 ```
 
 ## Safety

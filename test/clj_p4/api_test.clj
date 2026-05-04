@@ -894,24 +894,24 @@
           (is (.exists (io/file target "clj-p4.marks"))))
         (finally (rm-rf d))))))
 
-(deftest stream-and-streams-mutually-exclusive-test
-  (testing "passing both :stream and :streams throws"
+(deftest source-and-sources-mutually-exclusive-test
+  (testing "passing both :source and :sources throws"
     (let [d (tmp-dir)
           target (str (io/file d "repo"))]
       (try
         (is (thrown-with-msg?
              clojure.lang.ExceptionInfo #"mutually exclusive"
-             (api/clone! {:conn   {:p4/port "h:1666"}
-                          :stream  "//stream/main"
-                          :streams ["//stream/main" "//stream/dev"]
+             (api/clone! {:conn    {:p4/port "h:1666"}
+                          :source  "//stream/main"
+                          :sources ["//stream/main" "//stream/dev"]
                           :target  target})))
         (finally (rm-rf d)))))
-  (testing "passing neither :stream nor :streams throws"
+  (testing "passing neither :source nor :sources throws"
     (let [d (tmp-dir)
           target (str (io/file d "repo"))]
       (try
         (is (thrown-with-msg?
-             clojure.lang.ExceptionInfo #"needs :stream"
+             clojure.lang.ExceptionInfo #"needs :source"
              (api/clone! {:conn   {:p4/port "h:1666"}
                           :target target})))
         (finally (rm-rf d))))))
@@ -1067,6 +1067,29 @@
         (let [result (run-clone-with-stream-of-type! d :sparserel)]
           (is (= 1 (:commits result)))
           (is (= 100 (:last-change result))))
+        (finally (rm-rf d))))))
+
+(deftest deprecated-stream-key-still-works-test
+  (testing ":stream still imports correctly + emits a stderr warning"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))
+          err-buf (java.io.StringWriter.)]
+      (try
+        (binding [*err* err-buf]
+          (with-redefs [p4/info         (constantly info-2024)
+                        p4/stream-chain (constantly [mainline])
+                        p4/changes      (fn [_ _ & _] [{:p4/change 100}])
+                        p4/describe     (fn [_ n] (describe-fixture n))
+                        p4/print-bytes! print-bytes-stub]
+            (let [result (api/clone! {:conn   {:p4/port "h:1666"}
+                                      :stream "//stream/main"
+                                      :target target})]
+              (is (= 1 (:commits result))))))
+        (testing "deprecation warning surfaced on stderr"
+          (let [err (str err-buf)]
+            (is (str/includes? err "deprecated"))
+            (is (str/includes? err ":stream"))
+            (is (str/includes? err ":source"))))
         (finally (rm-rf d))))))
 
 (deftest stop-predicate-test

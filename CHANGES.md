@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.15.0-alpha
+
+Roadmap step 7 of 8 (post-0.8.0): `:stream` → `:source` rename. The parameter has accepted both stream depots and classic depot paths since 0.3.0; `:source` is the honest name. Lands pre-1.0 so the API stabilises on the right name before the public commitment.
+
+### Changed
+
+- **`:source` / `:sources` / `:source->ref` are the new names** on `clone!` and `sync!`. Functionally identical to the previous `:stream` / `:streams` / `:stream->ref` — only the keyword changed. Likewise the corresponding error keyword pair: `:clj-p4/error :stream-and-streams-set` is now `:source-and-sources-set`.
+- **README's quick-start examples** reflect the new names; the old `:stream` form still works for the 0.15.x line.
+
+### Deprecated
+
+- **`:stream`, `:streams`, `:stream->ref`** continue to work through the 0.15.x line. Each call to `clone!` / `sync!` that uses one of them emits a single deprecation line on stderr (one per call — not per changelist; safe inside long-running clones). Removal is planned for a future release once downstream callers have migrated.
+
+### Notes
+
+- **Internal context maps still use `:stream`** for the moment — the rename is API-facing only, since the internal helpers thread the value through many places and a deeper rename is just churn. A future pass can complete the rename if it stops being a no-op.
+
 ## 0.14.0-alpha
 
 Roadmap step 6 of 8 (post-0.8.0): byte-level validation harness. The count + size summary in 0.7.0 catches order-of-magnitude failures; this catches the subtle ones.
