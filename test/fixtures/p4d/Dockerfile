@@ -27,6 +27,14 @@ RUN curl -fsSL \
  && chmod +x /usr/local/bin/p4d /usr/local/bin/p4 \
  && p4d -V | head -3
 
+# Babashka — fixture entrypoint and seed scripts are written in Clojure.
+ARG BB_VERSION=1.12.197
+RUN curl -fsSL \
+        "https://github.com/babashka/babashka/releases/download/v${BB_VERSION}/babashka-${BB_VERSION}-linux-amd64-static.tar.gz" \
+    | tar -xz -C /usr/local/bin \
+ && chmod +x /usr/local/bin/bb \
+ && bb --version
+
 # UTF-8 locale for unicode-content fixtures.
 RUN sed -i 's/# en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen \
  && locale-gen
@@ -40,9 +48,9 @@ ENV P4ROOT=/p4 P4PORT=1666 \
 EXPOSE 1666
 WORKDIR /p4
 
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-COPY seed.sh       /usr/local/bin/seed.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/seed.sh
+COPY entrypoint.bb /usr/local/bin/entrypoint.bb
+COPY seed.bb       /usr/local/bin/seed.bb
+RUN chmod +x /usr/local/bin/entrypoint.bb /usr/local/bin/seed.bb
 
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.bb"]
 CMD ["serve"]
