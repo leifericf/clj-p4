@@ -14,7 +14,7 @@
   (:require [clojure.string :as str]))
 
 (defn- regex-escape [s]
-  (str/replace s #"[.\\+*?\[\]\^\$\(\)\{\}\|]" "\\\\$0"))
+  (str/replace s #"[.\\+*?\[\]\^\$\(\)\{\}\|]" #(str "\\" %)))
 
 (defn- indexed-values
   "Coalesce keys matching `<prefix><n>` (n = 0, 1, …) into a vector in order.

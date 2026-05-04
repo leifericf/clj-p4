@@ -6,7 +6,7 @@
   (:require [clojure.string :as str]))
 
 (defn- regex-escape [s]
-  (str/replace s #"[.\\+*?\[\]\^\$\(\)\{\}\|]" "\\\\$0"))
+  (str/replace s #"[.\\+*?\[\]\^\$\(\)\{\}\|]" #(str "\\" %)))
 
 (defn glob->tokens
   "Tokenise a P4-style glob into `[:literal s] :star :ellipsis [:percent n]`.
