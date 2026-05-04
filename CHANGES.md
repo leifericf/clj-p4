@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Fixed
+
+- `:fetch-parallelism` now actually bounds concurrency. The two parallel
+  fetch sites in `clj-p4.execute` (per-changelist `p4 print` and
+  merge-source `p4 integrated`/`p4 fstat` lookups) previously used
+  `pmap`, whose parallelism is hardcoded to `(+ 2 ncpus)` regardless of
+  the configured value. Replaced with a `bounded-pmap` helper backed by
+  `core.async/pipeline-blocking` — ordered, bounded, and uses dedicated
+  worker threads suitable for blocking I/O.
+
 ## 0.1.0-alpha
 
 First tagged release. Pre-alpha: the public API will move; pin a SHA, not

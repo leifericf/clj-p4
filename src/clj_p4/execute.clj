@@ -8,8 +8,31 @@
             [clj-p4.shell.git :as git]
             [clj-p4.shell.p4 :as p4]
             [clj-p4.view :as view]
+            [clojure.core.async :as a]
             [clojure.string :as str])
   (:import (java.io ByteArrayOutputStream)))
+
+(defn- bounded-pmap
+  "Apply `f` across `coll` using up to `n` worker threads, preserving
+   input order. Falls back to `mapv` for `n <= 1`. The first exception
+   thrown by any worker propagates to the caller; partial results are
+   discarded.
+
+   Backed by `core.async/pipeline-blocking`, which is the idiomatic
+   primitive for blocking I/O fan-out: ordered, bounded, and uses one
+   dedicated thread per worker (no go-thread parking)."
+  [n f coll]
+  (if (or (nil? n) (<= n 1))
+    (mapv f coll)
+    (let [err (atom nil)
+          out (a/chan)]
+      (a/pipeline-blocking
+       n out (map f) (a/to-chan! coll)
+       true
+       (fn [t] (compare-and-set! err nil t) nil))
+      (let [results (a/<!! (a/into [] out))]
+        (when-let [t @err] (throw t))
+        results))))
 
 (def ^:private blob-mark-base 1000000000)
 
@@ -160,9 +183,7 @@
                     (if (= :M (:op op))
                       (assoc op :bytes (fetch-blob-bytes! ctx change (:fr op)))
                       op))]
-    (if (or (nil? paral) (<= paral 1))
-      (mapv fetch-one ops)
-      (vec (pmap fetch-one ops)))))
+    (bounded-pmap paral fetch-one ops)))
 
 (defn- emit-ops!
   "Walk `ops` (already byte-loaded) and serialise them into fast-import.
@@ -257,27 +278,27 @@
 
    Two RPCs per integrate file: `p4 integrated -F change=<C>` to find
    the source path + rev, then `p4 fstat <source>#<rev>` to find the
-   change that produced that rev. Fanned out via `pmap` so the cost is
-   bounded by `:fetch-parallelism`-equivalent concurrency."
-  [{:keys [conn]} {:p4/keys [change files]} imported?]
-  (let [integrate-files (filter #(= :integrate (:rev/action %)) files)]
+   change that produced that rev. Fanned out via `bounded-pmap` so the
+   cost is bounded by `:fetch-parallelism`."
+  [{:keys [conn fetch-parallelism]} {:p4/keys [change files]} imported?]
+  (let [integrate-files (filter #(= :integrate (:rev/action %)) files)
+        lookup-source
+        (fn [fr]
+          (try
+            (let [rows (p4/integrated conn change (:rev/depot fr))
+                  row  (first rows)]
+              (when (and row
+                         (:integ/from-file row)
+                         (:integ/end-from-rev row))
+                (:fstat/head-change
+                 (p4/fstat conn
+                           (str (:integ/from-file row)
+                                "#"
+                                (:integ/end-from-rev row))))))
+            (catch Exception _ nil)))]
     (when (seq integrate-files)
       (let [sources (->> integrate-files
-                         (pmap (fn [fr]
-                                 (try
-                                   (let [rows (p4/integrated conn change
-                                                             (:rev/depot fr))
-                                         row  (first rows)]
-                                     (when (and row
-                                                (:integ/from-file row)
-                                                (:integ/end-from-rev row))
-                                       (:fstat/head-change
-                                        (p4/fstat
-                                         conn
-                                         (str (:integ/from-file row)
-                                              "#"
-                                              (:integ/end-from-rev row))))))
-                                   (catch Exception _ nil))))
+                         (bounded-pmap fetch-parallelism lookup-source)
                          (filter some?)
                          (filter imported?))]
         (when (seq sources)
