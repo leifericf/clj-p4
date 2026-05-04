@@ -40,20 +40,25 @@
         :else
         (recur (inc i) (conj acc (subs glob i (inc i))))))))
 
-(defn tokens->re
-  "Tokens → regex pattern with each wildcard token a capture group, anchored."
+(defn tokens->re-body
+  "Tokens → regex source string with each wildcard token a capture group.
+   Caller chooses anchoring."
   [tokens]
-  (let [body (str/join
-              (for [t tokens]
-                (cond
-                  (= :ellipsis t)            "(.*)"
-                  (= :star t)                "([^/]*)"
-                  (and (vector? t)
-                       (= :percent (first t))) "([^/]*)"
-                  (and (vector? t)
-                       (= :literal (first t))) (regex-escape (second t))
-                  :else                       (regex-escape (str t)))))]
-    (re-pattern (str "^" body "$"))))
+  (str/join
+   (for [t tokens]
+     (cond
+       (= :ellipsis t)            "(.*)"
+       (= :star t)                "([^/]*)"
+       (and (vector? t)
+            (= :percent (first t))) "([^/]*)"
+       (and (vector? t)
+            (= :literal (first t))) (regex-escape (second t))
+       :else                       (regex-escape (str t))))))
+
+(defn tokens->re
+  "Tokens → regex pattern with each wildcard token a capture group, fully anchored."
+  [tokens]
+  (re-pattern (str "^" (tokens->re-body tokens) "$")))
 
 (defn glob->re
   "Convenience: compile a glob string straight to its anchored regex."
