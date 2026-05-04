@@ -10,8 +10,18 @@
 
    Times: epoch-milliseconds (long), to keep the layer host-neutral.
    `:stream/updated` stays as the raw `\"YYYY/MM/DD HH:MM:SS\"` string —
-   it is metadata only, not used in clone/sync logic."
-  (:require [clojure.string :as str]))
+   it is metadata only, not used in clone/sync logic.
+
+   Value-level coercion (string → long, string → keyword, epoch-seconds
+   → epoch-ms, `\"enabled\"` → boolean) is delegated to
+   `clj-p4.schema/record-transformer` via `malli.core/decode`. Helpers
+   in this namespace handle the *structural* work malli can't express:
+   coalescing indexed fields, splitting `Paths:` lines into typed
+   tuples, and decomposing the `text+kx` file-type string into
+   `:rev/type` / `:rev/flags` / `:rev/keyword-flags`."
+  (:require [clj-p4.schema :as schema]
+            [clojure.string :as str]
+            [malli.core :as m]))
 
 (defn- regex-escape [s]
   (str/replace s #"[.\\+*?\[\]\^\$\(\)\{\}\|]" #(str "\\" %)))
@@ -30,15 +40,6 @@
                      [(parse-long n) (get m k)])))
            (sort-by first)
            (mapv second))))
-
-(def ^:private stream-type->kw
-  {"mainline"    :mainline
-   "development" :development
-   "release"     :release
-   "virtual"     :virtual
-   "task"        :task
-   "sparsedev"   :sparsedev
-   "sparserel"   :sparserel})
 
 (def ^:private path-kind->kw
   {"share"   :share
@@ -62,38 +63,32 @@
     (when (and a b) [a b])))
 
 (defn parse-stream-spec
-  "Generic record from `p4 stream -o //stream/x` → `StreamSpec`."
+  "Generic record from `p4 stream -o //stream/x` → `StreamSpec`. Value
+   coercion (`Type:` string → keyword) is performed by
+   `schema/record-transformer`; this fn handles the structural work."
   [record]
-  (let [type-str (get record "Type")
-        opts-str (get record "Options")]
-    (cond-> {:stream/name    (get record "Stream")
-             :stream/parent  (get record "Parent")
-             :stream/type    (stream-type->kw type-str)
-             :stream/paths   (->> (indexed-values record "Paths")
-                                  (keep parse-path-line)
-                                  vec)
-             :stream/remapped (->> (indexed-values record "Remapped")
-                                   (keep parse-remap-line)
+  (let [opts-str (get record "Options")]
+    (m/decode
+     schema/stream-spec
+     (cond-> {:stream/name    (get record "Stream")
+              :stream/parent  (get record "Parent")
+              :stream/type    (get record "Type")
+              :stream/paths   (->> (indexed-values record "Paths")
+                                   (keep parse-path-line)
                                    vec)
-             :stream/ignored  (->> (indexed-values record "Ignored")
-                                   (mapv str/trim))
-             :stream/options  (if (str/blank? opts-str)
-                                #{}
-                                (->> (str/split (str/trim opts-str) #"\s+")
-                                     (map keyword)
-                                     set))}
-      (get record "Update")
-      (assoc :stream/updated (get record "Update")))))
-
-(def ^:private action->kw
-  {"add"          :add
-   "edit"         :edit
-   "delete"       :delete
-   "branch"       :branch
-   "integrate"    :integrate
-   "purge"        :purge
-   "move/add"     :move/add
-   "move/delete"  :move/delete})
+              :stream/remapped (->> (indexed-values record "Remapped")
+                                    (keep parse-remap-line)
+                                    vec)
+              :stream/ignored  (->> (indexed-values record "Ignored")
+                                    (mapv str/trim))
+              :stream/options  (if (str/blank? opts-str)
+                                 #{}
+                                 (->> (str/split (str/trim opts-str) #"\s+")
+                                      (map keyword)
+                                      set))}
+       (get record "Update")
+       (assoc :stream/updated (get record "Update")))
+     schema/record-transformer)))
 
 (def ^:private base-type->kw
   {"text"     :text
@@ -146,20 +141,23 @@
      :rev/keyword-flags  kw-flags}))
 
 (defn- parse-file-rev
-  "Indexed file fields → FileRev. `idx` is the suffix used in describe records."
+  "Indexed file fields → FileRev. `idx` is the suffix used in describe
+   records. Value coercion (string→keyword for `:rev/action`,
+   string→long for `:rev/rev` / `:rev/size`) is delegated to
+   `schema/record-transformer`."
   [record idx]
-  (let [k       #(get record (str % idx))
-        type-m  (parse-file-type (k "type"))
-        size-s  (k "fileSize")
-        rev-s   (k "rev")
-        moved   (k "movedFile")]
-    (cond-> (merge type-m
-                   {:rev/depot  (k "depotFile")
-                    :rev/action (action->kw (k "action"))})
-      rev-s        (assoc :rev/rev    (parse-long rev-s))
-      (k "digest") (assoc :rev/digest (k "digest"))
-      size-s       (assoc :rev/size   (parse-long size-s))
-      moved        (assoc :rev/moved-file moved))))
+  (let [k      #(get record (str % idx))
+        type-m (parse-file-type (k "type"))]
+    (m/decode
+     schema/file-rev
+     (cond-> (merge type-m
+                    {:rev/depot  (k "depotFile")
+                     :rev/action (k "action")})
+       (k "rev")       (assoc :rev/rev (k "rev"))
+       (k "digest")    (assoc :rev/digest (k "digest"))
+       (k "fileSize")  (assoc :rev/size (k "fileSize"))
+       (k "movedFile") (assoc :rev/moved-file (k "movedFile")))
+     schema/record-transformer)))
 
 (defn- file-indices
   "Indices `n` for which `depotFile<n>` exists in `record`, sorted."
@@ -170,22 +168,21 @@
                  (parse-long n))))
        sort))
 
-(defn- epoch-seconds-str->ms [s]
-  (when-let [n (and s (parse-long s))]
-    (* 1000 n)))
-
 (defn parse-changelist
   "Generic record (from `p4 changes -l -G` or similar) → ChangelistRecord
-   *without* `:p4/files` (use `parse-describe` for that)."
+   *without* `:p4/files` (use `parse-describe` for that). Value coercion
+   is delegated to `schema/record-transformer`."
   [record]
-  (let [change-s (get record "change")]
-    (cond-> {:p4/change (when change-s (parse-long change-s))
-             :p4/user   (get record "user")
-             :p4/client (get record "client")
-             :p4/desc   (get record "desc")
-             :p4/status (some-> (get record "status") keyword)}
-      (get record "stream") (assoc :p4/stream (get record "stream"))
-      (get record "time")   (assoc :p4/time   (epoch-seconds-str->ms (get record "time"))))))
+  (m/decode
+   schema/changelist-record
+   (cond-> {:p4/change (get record "change")
+            :p4/user   (get record "user")
+            :p4/client (get record "client")
+            :p4/desc   (get record "desc")
+            :p4/status (get record "status")}
+     (get record "stream") (assoc :p4/stream (get record "stream"))
+     (get record "time")   (assoc :p4/time (get record "time")))
+   schema/record-transformer))
 
 (defn parse-describe
   "Generic record from `p4 describe -s -G <change>` → ChangelistRecord with
@@ -200,26 +197,34 @@
   [records]
   (mapv (fn [r]
           (let [type-m (parse-file-type (get r "type"))]
-            (cond-> (merge type-m
-                           {:rev/depot  (get r "depotFile")
-                            :rev/action (some-> (get r "action") action->kw)})
-              (get r "rev")      (assoc :rev/rev    (parse-long (get r "rev")))
-              (get r "digest")   (assoc :rev/digest (get r "digest"))
-              (get r "fileSize") (assoc :rev/size   (parse-long (get r "fileSize"))))))
+            (m/decode
+             schema/file-rev
+             (cond-> (merge type-m
+                            {:rev/depot  (get r "depotFile")
+                             :rev/action (get r "action")})
+               (get r "rev")      (assoc :rev/rev    (get r "rev"))
+               (get r "digest")   (assoc :rev/digest (get r "digest"))
+               (get r "fileSize") (assoc :rev/size   (get r "fileSize")))
+             schema/record-transformer)))
         records))
 
 (defn parse-info
   "Generic record from `p4 info -G` → server info map. Exposes
    `:p4/server-version-major` / `-minor` for capability detection
-   (e.g. `-Mj` JSON support requires major ≥ 2024 minor ≥ 1)."
+   (e.g. `-Mj` JSON support requires major ≥ 2024 minor ≥ 1). Version
+   regex extraction stays here; everything else is `schema`-driven
+   coercion."
   [record]
   (let [version (get record "serverVersion")
         [_ major minor] (when version
                           (re-find #"(\d{4})\.(\d+)" version))]
-    (cond-> {:p4/server-version    version
-             :p4/server-uptime     (get record "serverUptime")
-             :p4/server-address    (get record "serverAddress")
-             :p4/case-handling     (some-> (get record "caseHandling") keyword)
-             :p4/unicode?          (= "enabled" (get record "unicode"))}
-      major (assoc :p4/server-version-major (parse-long major))
-      minor (assoc :p4/server-version-minor (parse-long minor)))))
+    (m/decode
+     schema/server-info
+     (cond-> {:p4/server-version  version
+              :p4/server-uptime   (get record "serverUptime")
+              :p4/server-address  (get record "serverAddress")
+              :p4/case-handling   (get record "caseHandling")
+              :p4/unicode?        (get record "unicode")}
+       major (assoc :p4/server-version-major major)
+       minor (assoc :p4/server-version-minor minor))
+     schema/record-transformer)))

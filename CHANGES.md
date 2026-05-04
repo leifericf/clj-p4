@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Changed
+
+- `clj-p4.parse.semantic` delegates value-level coercion (string→long
+  for `:p4/change` / `:rev/rev` / `:rev/size`; string→keyword for
+  `:rev/action` / `:p4/status` / `:stream/type` / `:p4/case-handling`;
+  epoch-seconds→epoch-ms for `:p4/time`; `\"enabled\"`→boolean for
+  `:p4/unicode?`) to `clj-p4.schema/record-transformer` via
+  `malli.core/decode`. The structural helpers (`indexed-values`,
+  `parse-path-line`, `parse-remap-line`, `parse-flags`,
+  `parse-file-type`, `file-indices`) remain. Output shape is
+  unchanged; tests in `clj-p4.parse.semantic-test` are the regression
+  guard.
+
 ### Added
 
 - `clone!` and `sync!` validate their options map against the malli
