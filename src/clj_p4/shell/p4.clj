@@ -222,6 +222,39 @@
       first
       ps/parse-describe))
 
+(defn integrated
+  "`p4 integrated -F \"change=<change>\" <to-file>` → seq of integration
+   records done in `change` against `to-file`. Each row carries
+   `:integ/from-file`, `:integ/end-from-rev`, `:integ/how`,
+   `:integ/change`. Used by merge-parent detection: the executor
+   resolves each `:rev/action :integrate` file to its source-file +
+   end-rev here, then asks `fstat` which change produced that rev."
+  [conn change to-file & {:keys [mode] :or {mode :G}}]
+  (let [args ["integrated" "-F" (str "change=" change) to-file]
+        recs (->> (run-p4! conn (with-mode-flag mode) args)
+                  (decode mode))]
+    (mapv (fn [r]
+            {:integ/to-file        (get r "toFile")
+             :integ/from-file      (get r "fromFile")
+             :integ/start-from-rev (some-> (get r "startFromRev") parse-long)
+             :integ/end-from-rev   (some-> (get r "endFromRev") parse-long)
+             :integ/how            (get r "how")
+             :integ/change         (some-> (get r "change") parse-long)})
+          recs)))
+
+(defn fstat
+  "`p4 fstat <depot-rev>` → first record's head fields. For an integration
+   source revision, `:fstat/head-change` is the changelist that produced
+   that revision — the answer to 'which CL is this merge from'."
+  [conn depot-rev & {:keys [mode] :or {mode :G}}]
+  (let [r (-> (run-p4! conn (with-mode-flag mode) ["fstat" depot-rev])
+              (->> (decode mode))
+              first)]
+    {:fstat/depot-file  (get r "depotFile")
+     :fstat/head-change (some-> (get r "headChange") parse-long)
+     :fstat/head-rev    (some-> (get r "headRev") parse-long)
+     :fstat/head-action (get r "headAction")}))
+
 (defn print-bytes!
   "`p4 print -q <depot-path>@<rev>` → raw file bytes written to
    `out-stream`. `-q` skips the header. No `-G`/`-Mj` here — file content

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 0.10.0-alpha
+
+Roadmap step 2 of 8 (post-0.8.0): integrate-as-2-parent merge. The biggest fidelity win still on the table for the read direction — Perforce integrations now show up as proper git merge commits rather than as linear-history "integrate"-action files.
+
+### Added
+
+- **Integrate-as-2-parent-merge detection.** When a changelist's files include `:rev/action :integrate` entries, the executor looks up each one's source file + end-rev via `p4 integrated -F change=<C>`, then asks `p4 fstat <source>#<rev>` for the change that produced that revision. If a strict majority of the CL's integrate files agree on a single source change AND that change is in the imported set, the commit is emitted with that source as a 2nd parent (`merge :<source-mark>`). Falls back to a linear commit silently when the majority isn't there or the source isn't imported. Aggregation runs through `pmap` so the cost is bounded by the JVM's agent-pool concurrency (the same pool `:fetch-parallelism` already uses).
+- **`:no-merge?` boolean on `clone!` / `sync!`.** Opt-out matching `p4-fusion`'s `--noMerge`. Skips the integrate-source lookup entirely — useful when the source-side files weren't imported (cross-depot integrates) or when the user prefers a strictly linear history.
+- **`clj-p4.shell.p4/integrated` and `clj-p4.shell.p4/fstat`** wire functions. Both subcommands were on the read-only allowlist already (added preemptively in 0.2.0).
+
+### Changed
+
+- **`:imported?` predicate replaces the old set-only model.** Sync runs treat anything `<= since-change` as imported (since fast-import marks survive across runs through the marks file from 0.1.0), so a merge from a pre-sync change can still be emitted on the new commit.
+
+### Notes
+
+- **Cross-depot integrates are still linear.** If a `//depot/foo` change was integrated into a `//depot/bar` clone, the source change isn't in `imported?` and the commit stays linear. That matches `p4-fusion`'s default behaviour and is the right call until multi-stream / multi-source clones land in 0.11.0.
+- **Two RPCs per integrate file** (`integrated -F` + `fstat`) is the rigorous read path. A pure-`fstat`-only short-circuit is conceivable when the file metadata already exposes the merge source, but the current shape is correct for every server version we test against and bounded enough by `pmap` to be acceptable. Benchmarks (0.16.0) will tell us whether to optimise further.
+
 ## 0.9.0-alpha
 
 Roadmap step 1 of 8 (post-0.8.0): describe lookahead. Eats the per-changelist `p4 describe` round-trip latency that dominates a multi-thousand-CL clone after parallel `p4 print` already absorbed the per-file fan-out.

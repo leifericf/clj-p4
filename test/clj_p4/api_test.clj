@@ -674,6 +674,151 @@
                @events))
         (finally (rm-rf d))))))
 
+(deftest integrate-as-merge-emits-2nd-parent-test
+  (testing "majority-vote integrate source in imported set → merge parent"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))
+          ;; Three changes:
+          ;;   100 — add src/lib.cpp on //stream/main
+          ;;   101 — add src/app.cpp on //stream/main
+          ;;   200 — integrate src/lib.cpp + src/app.cpp into //stream/dev
+          ;;          BOTH source from change 100 / change 101 respectively
+          cl100 {:p4/change 100 :p4/user "x" :p4/time 0 :p4/desc "lib"
+                 :p4/files [{:rev/depot "//stream/main/src/lib.cpp"
+                             :rev/rev 1 :rev/action :add :rev/type :text
+                             :rev/flags #{} :rev/keyword-flags #{}}]}
+          cl101 {:p4/change 101 :p4/user "x" :p4/time 1000 :p4/desc "app"
+                 :p4/files [{:rev/depot "//stream/main/src/app.cpp"
+                             :rev/rev 1 :rev/action :add :rev/type :text
+                             :rev/flags #{} :rev/keyword-flags #{}}]}
+          cl200 {:p4/change 200 :p4/user "x" :p4/time 2000
+                 :p4/desc "merge from main"
+                 :p4/files [{:rev/depot "//stream/main/src/lib.cpp"
+                             :rev/rev 1 :rev/action :integrate :rev/type :text
+                             :rev/flags #{} :rev/keyword-flags #{}}
+                            {:rev/depot "//stream/main/src/app.cpp"
+                             :rev/rev 1 :rev/action :integrate :rev/type :text
+                             :rev/flags #{} :rev/keyword-flags #{}}]}
+          ;; integrated → fromFile + endFromRev; fstat → headChange.
+          ;; Both files claim source change 101 → 101 wins by majority,
+          ;; emitted as the merge parent.
+          integrated-stub (fn [_ _change to-file]
+                            [{:integ/from-file to-file
+                              :integ/end-from-rev 1
+                              :integ/how "merge from"
+                              :integ/change 200}])
+          fstat-stub (fn [_ rev]
+                       (cond
+                         (str/includes? rev "lib.cpp") {:fstat/head-change 101}
+                         (str/includes? rev "app.cpp") {:fstat/head-change 101}
+                         :else {:fstat/head-change nil}))]
+      (try
+        (with-redefs [p4/info         (constantly info-2024)
+                      p4/stream-chain (constantly [mainline])
+                      p4/changes      (fn [_ _ & _] [{:p4/change 100}
+                                                     {:p4/change 101}
+                                                     {:p4/change 200}])
+                      p4/describe     (fn [_ n] (case n
+                                                  100 cl100
+                                                  101 cl101
+                                                  200 cl200))
+                      p4/print-bytes! print-bytes-stub
+                      p4/integrated   integrated-stub
+                      p4/fstat        fstat-stub]
+          (api/clone! {:conn   {:p4/port "h:1666"}
+                       :stream "//stream/main"
+                       :target target}))
+        (testing "the integrate commit has 2 parents"
+          (let [{:keys [stdout-bytes]}
+                (proc/run-checked! ["git" "-C" target "log" "-1"
+                                    "--pretty=%P" "refs/heads/main"])
+                parents (str/split (str/trim
+                                    (String. ^bytes stdout-bytes "UTF-8"))
+                                   #"\s+")]
+            (is (= 2 (count parents)))))
+        (finally (rm-rf d))))))
+
+(deftest integrate-without-imported-source-stays-linear-test
+  (testing "integrate source not in imported set → no merge parent"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))
+          cl100 {:p4/change 100 :p4/user "x" :p4/time 0 :p4/desc "first"
+                 :p4/files [{:rev/depot "//stream/main/src/a.cpp"
+                             :rev/rev 1 :rev/action :add :rev/type :text
+                             :rev/flags #{} :rev/keyword-flags #{}}]}
+          cl101 {:p4/change 101 :p4/user "x" :p4/time 1000
+                 :p4/desc "integrate from elsewhere"
+                 :p4/files [{:rev/depot "//stream/main/src/a.cpp"
+                             :rev/rev 2 :rev/action :integrate :rev/type :text
+                             :rev/flags #{} :rev/keyword-flags #{}}]}]
+      (try
+        (with-redefs [p4/info         (constantly info-2024)
+                      p4/stream-chain (constantly [mainline])
+                      p4/changes      (fn [_ _ & _] [{:p4/change 100}
+                                                     {:p4/change 101}])
+                      p4/describe     (fn [_ n] (case n 100 cl100 101 cl101))
+                      p4/print-bytes! print-bytes-stub
+                      p4/integrated   (fn [_ _ to-file]
+                                        [{:integ/from-file to-file
+                                          :integ/end-from-rev 1
+                                          :integ/how "merge from"
+                                          :integ/change 101}])
+                      ;; The fstat lookup says the source change is 999,
+                      ;; which is not in `imported?`'s set.
+                      p4/fstat        (fn [_ _] {:fstat/head-change 999})]
+          (api/clone! {:conn   {:p4/port "h:1666"}
+                       :stream "//stream/main"
+                       :target target}))
+        (testing "the integrate commit has 1 parent (linear)"
+          (let [{:keys [stdout-bytes]}
+                (proc/run-checked! ["git" "-C" target "log" "-1"
+                                    "--pretty=%P" "refs/heads/main"])
+                parents (str/split (str/trim
+                                    (String. ^bytes stdout-bytes "UTF-8"))
+                                   #"\s+")]
+            (is (= 1 (count parents)))))
+        (finally (rm-rf d))))))
+
+(deftest no-merge-opt-out-suppresses-2nd-parent-test
+  (testing ":no-merge? true skips the merge-source lookup entirely"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))
+          cl100 {:p4/change 100 :p4/user "x" :p4/time 0 :p4/desc "first"
+                 :p4/files [{:rev/depot "//stream/main/src/a.cpp"
+                             :rev/rev 1 :rev/action :add :rev/type :text
+                             :rev/flags #{} :rev/keyword-flags #{}}]}
+          cl101 {:p4/change 101 :p4/user "x" :p4/time 1000
+                 :p4/desc "integrate"
+                 :p4/files [{:rev/depot "//stream/main/src/a.cpp"
+                             :rev/rev 2 :rev/action :integrate :rev/type :text
+                             :rev/flags #{} :rev/keyword-flags #{}}]}
+          integ-called? (atom false)]
+      (try
+        (with-redefs [p4/info         (constantly info-2024)
+                      p4/stream-chain (constantly [mainline])
+                      p4/changes      (fn [_ _ & _] [{:p4/change 100}
+                                                     {:p4/change 101}])
+                      p4/describe     (fn [_ n] (case n 100 cl100 101 cl101))
+                      p4/print-bytes! print-bytes-stub
+                      p4/integrated   (fn [_ _ _]
+                                        (reset! integ-called? true) [])
+                      p4/fstat        (fn [_ _] {:fstat/head-change 100})]
+          (api/clone! {:conn   {:p4/port "h:1666"}
+                       :stream "//stream/main"
+                       :target target
+                       :no-merge? true}))
+        (testing "p4/integrated never called"
+          (is (false? @integ-called?)))
+        (testing "history is linear"
+          (let [{:keys [stdout-bytes]}
+                (proc/run-checked! ["git" "-C" target "log" "-1"
+                                    "--pretty=%P" "refs/heads/main"])
+                parents (str/split (str/trim
+                                    (String. ^bytes stdout-bytes "UTF-8"))
+                                   #"\s+")]
+            (is (= 1 (count parents)))))
+        (finally (rm-rf d))))))
+
 (deftest stop-predicate-test
   (let [d (tmp-dir)]
     (try

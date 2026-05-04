@@ -64,7 +64,7 @@ A Perforce server is the single source of truth for whole engineering organisati
 | `streams`, `stream -o` | List streams; read one stream spec. |
 | `changes`, `describe`, `print` | Walk changelists, fetch file content. |
 | `files`, `fstat`, `dirs`, `sizes`, `where` | Read file metadata. |
-| `integrated` | Read integration history (currently unused; reserved). |
+| `integrated` | Read integration history (used by integrate-as-merge detection). |
 | `labels`, `label -o` | Read labels (used by `:emit-labels?`). |
 | `users`, `user -o` | Read user records. |
 | `protects` | Read protections table. |

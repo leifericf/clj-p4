@@ -250,17 +250,61 @@
       (try (.cancel f true) (catch Exception _)))
     (reset! describes {})))
 
+(defn- merge-source-for-cl
+  "Given a changelist `cl`, look up the merge-source change number — the
+   change a majority of the CL's `:integrate` files were branched/merged
+   from — or nil. Returns nil when:
+   - no `:integrate` files in the CL, or
+   - lookups returned no candidates, or
+   - no single source change holds a strict majority of integrates, or
+   - the majority winner isn't in `imported-set`.
+
+   Two RPCs per integrate file: `p4 integrated -F change=<C>` to find
+   the source path + rev, then `p4 fstat <source>#<rev>` to find the
+   change that produced that rev. Fanned out via `pmap` so the cost is
+   bounded by `:fetch-parallelism`-equivalent concurrency."
+  [{:keys [conn]} {:p4/keys [change files]} imported?]
+  (let [integrate-files (filter #(= :integrate (:rev/action %)) files)]
+    (when (seq integrate-files)
+      (let [sources (->> integrate-files
+                         (pmap (fn [fr]
+                                 (try
+                                   (let [rows (p4/integrated conn change
+                                                             (:rev/depot fr))
+                                         row  (first rows)]
+                                     (when (and row
+                                                (:integ/from-file row)
+                                                (:integ/end-from-rev row))
+                                       (:fstat/head-change
+                                        (p4/fstat
+                                         conn
+                                         (str (:integ/from-file row)
+                                              "#"
+                                              (:integ/end-from-rev row))))))
+                                   (catch Exception _ nil))))
+                         (filter some?)
+                         (filter imported?))]
+        (when (seq sources)
+          (let [counts        (frequencies sources)
+                [winner cnt]  (apply max-key val counts)]
+            (when (> (* 2 cnt) (count integrate-files))
+              winner)))))))
+
 (defn- emit-change!
-  [{:keys [git-handle ref last-change stream-name user-map] :as ctx} change-num]
+  [{:keys [git-handle ref last-change stream-name user-map
+           no-merge? imported?] :as ctx} change-num]
   (let [cl     (describe-cached ctx change-num)
         ops    (file-ops-for-change ctx cl)
+        merge-src (when-not no-merge?
+                    (merge-source-for-cl ctx cl (or imported? (constantly false))))
         commit {:ref       ref
                 :mark      (:p4/change cl)
                 :committer (committer-of user-map cl)
                 :message   (commit-message stream-name cl)
                 :files     ops}
         commit (cond-> commit
-                 last-change (assoc :from (str ":" last-change)))]
+                 last-change (assoc :from (str ":" last-change))
+                 merge-src   (assoc :merge [(str ":" merge-src)]))]
     (git/emit-commit! git-handle commit)
     (assoc ctx :last-change (:p4/change cl))))
 
@@ -278,7 +322,10 @@
 (defn- initial-ctx
   [plan {:keys [git-handle conn ref]}]
   (let [opts      (:plan/options plan)
-        lookahead (:lookahead opts)]
+        lookahead (:lookahead opts)
+        new-set   (set (:plan/changelists plan))
+        since     (when (= :sync (:plan/kind plan))
+                    (:plan/since-change plan))]
     {:plan              plan
      :conn              conn
      :git-handle        git-handle
@@ -293,8 +340,10 @@
      :lookahead         lookahead
      :changelists       (vec (:plan/changelists plan))
      :describes         (when (and lookahead (pos? lookahead)) (atom {}))
-     :last-change       (when (= :sync (:plan/kind plan))
-                          (:plan/since-change plan))}))
+     :no-merge?         (boolean (:no-merge? opts))
+     :imported?         (fn [c] (or (contains? new-set c)
+                                    (and since (some-> c (<= since)))))
+     :last-change       since}))
 
 (defn- parse-revision-change
   "Pull a changelist number out of a label's `Revision:` field. Common

@@ -162,7 +162,7 @@
    runs the import, tears the client down."
   [{:keys [conn stream target classic-stream mode max-changes exclude
            fetch-parallelism max-print-bytes user-map emit-labels?
-           lookahead ref progress-fn stop?]}]
+           lookahead no-merge? ref progress-fn stop?]}]
   (p4/with-classic-client
     conn stream
     (fn [eph-conn {:client/keys [name view-lines]}]
@@ -185,7 +185,8 @@
                                           max-print-bytes   (assoc :max-print-bytes max-print-bytes)
                                           user-map          (assoc :user-map user-map)
                                           emit-labels?      (assoc :emit-labels? emit-labels?)
-                                          lookahead         (assoc :lookahead lookahead))})]
+                                          lookahead         (assoc :lookahead lookahead)
+                                          no-merge?         (assoc :no-merge? no-merge?))})]
         (git/init-bare! target)
         (let [final (run-fast-import! plan-val target eph-conn ref
                                       progress-fn stop?)]
@@ -199,7 +200,7 @@
    block, runs the import, tears the client down."
   [{:keys [conn stream target chain mode max-changes exclude
            fetch-parallelism max-print-bytes user-map emit-labels?
-           lookahead ref progress-fn stop?]}]
+           lookahead no-merge? ref progress-fn stop?]}]
   (p4/with-ephemeral-client
     conn stream
     (fn [eph-conn {:client/keys [name view-lines]}]
@@ -220,7 +221,8 @@
                                           max-print-bytes   (assoc :max-print-bytes max-print-bytes)
                                           user-map          (assoc :user-map user-map)
                                           emit-labels?      (assoc :emit-labels? emit-labels?)
-                                          lookahead         (assoc :lookahead lookahead))})]
+                                          lookahead         (assoc :lookahead lookahead)
+                                          no-merge?         (assoc :no-merge? no-merge?))})]
         (git/init-bare! target)
         (let [final (run-fast-import! plan-val target eph-conn ref
                                       progress-fn stop?)]
@@ -234,7 +236,7 @@
    merge."
   [{:keys [conn stream target chain mode max-changes exclude
            fetch-parallelism max-print-bytes user-map emit-labels?
-           lookahead ref progress-fn stop?]}]
+           lookahead no-merge? ref progress-fn stop?]}]
   (let [changes  (resolve-changes conn (str stream "/...")
                                   {:max-changes max-changes} mode)
         plan-val (plan/clone-plan
@@ -249,7 +251,8 @@
                                    max-print-bytes   (assoc :max-print-bytes max-print-bytes)
                                    user-map          (assoc :user-map user-map)
                                    emit-labels?      (assoc :emit-labels? emit-labels?)
-                                   lookahead         (assoc :lookahead lookahead))})]
+                                   lookahead         (assoc :lookahead lookahead)
+                                   no-merge?         (assoc :no-merge? no-merge?))})]
     (git/init-bare! target)
     (let [final (run-fast-import! plan-val target conn ref progress-fn stop?)]
       {:target      target
@@ -279,6 +282,7 @@
      :max-print-bytes   cap on per-file `p4 print` size; throws above
      :lookahead         N upcoming changelists to `p4 describe` in parallel
                         with the current commit's emission (0 = sequential)
+     :no-merge?         disable integrate-as-merge detection (default: enabled)
      :progress-fn       `(fn [op])` — invoked before each op
      :stop?             `(fn [])` — abort predicate
 
@@ -293,7 +297,7 @@
    user-supplied source path, not the ephemeral client name."
   [{:keys [conn stream target ref max-changes exclude
            fetch-parallelism max-print-bytes user-map emit-labels?
-           lookahead progress-fn stop?]
+           lookahead no-merge? progress-fn stop?]
     :or   {ref         "refs/heads/main"
            progress-fn (fn [_])
            stop?       (constantly false)}}]
@@ -309,6 +313,7 @@
                      :user-map          user-map
                      :emit-labels?      emit-labels?
                      :lookahead         lookahead
+                     :no-merge?         no-merge?
                      :ref ref :progress-fn progress-fn :stop? stop?}
               chain          (assoc :chain chain)
               classic-stream (assoc :classic-stream classic-stream))]
@@ -342,12 +347,13 @@
      :last-change  (change-from-trailer (last-trailer-message target ref))}))
 
 (defn- sync-options
-  [{:keys [fetch-parallelism max-print-bytes user-map lookahead]}]
+  [{:keys [fetch-parallelism max-print-bytes user-map lookahead no-merge?]}]
   (cond-> {:checkpoint-every 1000}
     fetch-parallelism (assoc :fetch-parallelism fetch-parallelism)
     max-print-bytes   (assoc :max-print-bytes max-print-bytes)
     user-map          (assoc :user-map user-map)
-    lookahead         (assoc :lookahead lookahead)))
+    lookahead         (assoc :lookahead lookahead)
+    no-merge?         (assoc :no-merge? no-merge?)))
 
 (defn- sync-via-ephemeral!
   [{:keys [conn stream target chain mode since exclude
@@ -432,7 +438,7 @@
    are routed through the same auto-managed ephemeral-client path as
    `clone!`."
   [{:keys [conn stream target ref exclude
-           fetch-parallelism max-print-bytes user-map lookahead
+           fetch-parallelism max-print-bytes user-map lookahead no-merge?
            progress-fn stop?]
     :or   {ref         "refs/heads/main"
            progress-fn (fn [_])
@@ -449,6 +455,7 @@
                        :max-print-bytes   max-print-bytes
                        :user-map          user-map
                        :lookahead         lookahead
+                       :no-merge?         no-merge?
                        :ref ref :progress-fn progress-fn :stop? stop?}
                 chain          (assoc :chain chain)
                 classic-stream (assoc :classic-stream classic-stream))]
