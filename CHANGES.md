@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.16.0-alpha
+
+Roadmap step 8 of 8 (post-0.8.0): migration docs + benchmark scaffolding. Closes the planned read-direction parity batch with operator-facing tooling: how to migrate, how to compare, and how to verify.
+
+### Added
+
+- **`docs/comparison.md`** — clj-p4 vs. p4-fusion feature table with per-row "since" annotations, plus a "why the per-knob differences" section that explains which p4-fusion knobs don't apply to clj-p4's design (`--printBatch`, `--refresh`) and which clj-p4 has that p4-fusion doesn't (read-only allowlist, byte-level validation, multi-source single repo, labels-as-tags).
+- **`docs/migrating-from-git-p4.md`** — side-by-side mapping of every relevant `git-p4` config knob to its `clj-p4` option. Includes the on-disk-format compatibility note: a `git-p4` clone resumes through `clj-p4 sync!` without re-cloning, since the `[git-p4: ...]` trailer shape is identical.
+- **`docs/migrating-from-p4-fusion.md`** — same side-by-side for p4-fusion users, plus a "when to pick which" decision matrix.
+- **`bench/clone.bb`** — Babashka script that times `git-p4`, `p4-fusion`, and `clj-p4` cloning the same source. Wraps each tool in `/usr/bin/time -lp` (macOS) / `-v` (Linux) and emits a markdown row per tool. Designed to be run locally against the test/fixtures/p4d Docker image, not in CI. `bench/README.md` documents the caveats (cold vs. warm cache, server-side load, network jitter, tool-version pinning).
+- **`bin/validate`** — operator-facing CLI wrapper around `clj-p4.validate/validate-tip` / `validate-deep!`. Bash dispatch over `clojure -X` so it stays a thin shim. Reads `P4PORT` / `P4USER` from env. Was deferred from 0.14.0 with the validation harness; lands here with the rest of the operator-facing tooling.
+
+### Notes
+
+- **No published benchmark numbers in this release.** The script is the deliverable; collecting numbers requires a stable host with a representative P4 server. `docs/bench-results.md` will land separately once a maintainer runs the script and pastes the markdown rows into a versioned doc.
+- **No code changes in 0.16.0.** Documentation, scripts, and CLI scaffolding only — the read-direction code surface is feature-complete as of 0.15.0.
+
 ## 0.15.0-alpha
 
 Roadmap step 7 of 8 (post-0.8.0): `:stream` → `:source` rename. The parameter has accepted both stream depots and classic depot paths since 0.3.0; `:source` is the honest name. Lands pre-1.0 so the API stabilises on the right name before the public commitment.
