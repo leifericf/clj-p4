@@ -30,6 +30,23 @@
            (:stream/options spec)))
     (is (= "2026/04/01 12:00:00" (:stream/updated spec)))))
 
+(deftest parse-stream-spec-recognises-all-stream-types-test
+  (testing "every stream type p4d emits maps to a known keyword"
+    (doseq [[type-str expected-kw] [["mainline"    :mainline]
+                                    ["development" :development]
+                                    ["release"     :release]
+                                    ["virtual"     :virtual]
+                                    ["task"        :task]
+                                    ["sparsedev"   :sparsedev]
+                                    ["sparserel"   :sparserel]]]
+      (is (= expected-kw
+             (:stream/type
+              (ps/parse-stream-spec
+               {"Stream"  "//stream/x"
+                "Type"    type-str
+                "Options" ""})))
+          (str "type=" type-str " should map to " expected-kw)))))
+
 (deftest parse-stream-spec-empty-options-test
   (let [spec (ps/parse-stream-spec {"Stream"  "//stream/x"
                                     "Type"    "mainline"

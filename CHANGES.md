@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.13.0-alpha
+
+Roadmap step 5 of 8 (post-0.8.0): task / sparsedev / sparserel stream support. With auto-view as the source of truth (0.12.0), these stream variants take exactly the same path as mainline / development / release / virtual — no per-type code path needed.
+
+### Added
+
+- **`task`, `sparsedev`, and `sparserel` recognised as stream types** by `parse-stream-spec`. Previously only the first three plus virtual mapped to a keyword; now every type p4d emits has a known `:stream/type` rather than `nil`. The dispatch never branched on type after 0.12.0, so this release is mostly explicit recognition + tests.
+
+### Removed
+
+- **Dead `virtual-leaf?`** in `clj-p4.api`. The 0.12.0 ephemeral-first dispatch made the virtual-vs-other branch unnecessary; the function had no callers since.
+
+### Notes
+
+- **Integration coverage for these stream types is `seed.sh` work.** A unit test asserts each variant routes through the auto-view dispatch with a stubbed client view; an actual p4d integration test would need `seed.sh` to create a representative `task` stream and `sparsedev` / `sparserel` siblings off `//stream/main`. That extension is straightforward but not in this release — it'll ride along with the benchmark fodder in 0.16.0.
+
 ## 0.12.0-alpha
 
 Roadmap step 4 of 8 (post-0.8.0): ephemeral-first dispatch as default for all streams. Picks up server-resolved `Components:` (and any other view composition the server does) for free, since the server is now the source of truth for the view in every stream clone — not just virtual ones.

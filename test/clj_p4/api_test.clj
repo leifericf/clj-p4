@@ -1001,6 +1001,74 @@
             (is (= 1 (:commits result)))))
         (finally (rm-rf d))))))
 
+(defn- stream-of-type
+  "Build a stream-spec value with `type-kw`. Shape mirrors `mainline`
+   except for the type field."
+  [name type-kw]
+  {:stream/name name
+   :stream/parent "//stream/main"
+   :stream/type type-kw
+   :stream/options #{}
+   :stream/paths   [[:share "src/..."]]
+   :stream/remapped []
+   :stream/ignored  []})
+
+(defn- run-clone-with-stream-of-type!
+  "Clone a stream of `type-kw` through the ephemeral-first dispatch and
+   return the result. Tests use this to assert that every stream type
+   imports cleanly without a per-type code path."
+  [d type-kw]
+  (let [target (str (io/file d (str "repo-" (name type-kw))))
+        leaf   (stream-of-type (str "//stream/" (name type-kw)) type-kw)
+        view-lines [(str "//stream/main/src/... //eph/src/...")]
+        with-eph (fn [_ _ f]
+                   (let [info {:client/name "eph"
+                               :client/view-lines view-lines}
+                         eph-conn {:p4/port "h:1666" :p4/client "eph"}]
+                     (f eph-conn info)))]
+    (with-redefs [p4/info                  (constantly info-2024)
+                  p4/stream-chain          (constantly [mainline leaf])
+                  p4/with-ephemeral-client with-eph
+                  p4/changes               (fn [_ _ & _] [{:p4/change 100}])
+                  p4/describe              (constantly
+                                            {:p4/change 100 :p4/user "x"
+                                             :p4/time 0 :p4/desc (name type-kw)
+                                             :p4/files
+                                             [{:rev/depot "//stream/main/src/x.cpp"
+                                               :rev/rev 1 :rev/action :add :rev/type :text
+                                               :rev/flags #{} :rev/keyword-flags #{}}]})
+                  p4/print-bytes!          print-bytes-stub]
+      (api/clone! {:conn   {:p4/port "h:1666"}
+                   :stream (str "//stream/" (name type-kw))
+                   :target target}))))
+
+(deftest task-stream-clones-via-ephemeral-test
+  (testing ":task streams import via the auto-view dispatch"
+    (let [d (tmp-dir)]
+      (try
+        (let [result (run-clone-with-stream-of-type! d :task)]
+          (is (= 1 (:commits result)))
+          (is (= 100 (:last-change result))))
+        (finally (rm-rf d))))))
+
+(deftest sparsedev-stream-clones-via-ephemeral-test
+  (testing ":sparsedev streams import via the auto-view dispatch"
+    (let [d (tmp-dir)]
+      (try
+        (let [result (run-clone-with-stream-of-type! d :sparsedev)]
+          (is (= 1 (:commits result)))
+          (is (= 100 (:last-change result))))
+        (finally (rm-rf d))))))
+
+(deftest sparserel-stream-clones-via-ephemeral-test
+  (testing ":sparserel streams import via the auto-view dispatch"
+    (let [d (tmp-dir)]
+      (try
+        (let [result (run-clone-with-stream-of-type! d :sparserel)]
+          (is (= 1 (:commits result)))
+          (is (= 100 (:last-change result))))
+        (finally (rm-rf d))))))
+
 (deftest stop-predicate-test
   (let [d (tmp-dir)]
     (try

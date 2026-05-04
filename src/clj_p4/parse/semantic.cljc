@@ -36,7 +36,9 @@
    "development" :development
    "release"     :release
    "virtual"     :virtual
-   "task"        :task})
+   "task"        :task
+   "sparsedev"   :sparsedev
+   "sparserel"   :sparserel})
 
 (def ^:private path-kind->kw
   {"share"   :share

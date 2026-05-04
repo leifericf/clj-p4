@@ -121,13 +121,6 @@
 
     :empty nil))
 
-(defn- virtual-leaf?
-  "True if the leaf (last) stream in `chain` is a virtual stream. P4
-   refuses queries to a virtual stream's depot path directly; the
-   library routes those through an ephemeral client."
-  [chain]
-  (= :virtual (:stream/type (last chain))))
-
 (defn- classic-depot-error?
   "True if `e` is a `:proc-failed` ex-info from `p4 stream -o` reporting
    that the path is not a stream — meaning it's a classic depot path."
