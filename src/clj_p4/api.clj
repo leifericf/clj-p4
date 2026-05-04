@@ -33,6 +33,18 @@
                                "git-p4:"))))
     (catch Exception _ false)))
 
+(defn- change-from-trailer
+  "Extract the changelist number from a `[git-p4: depot-paths = \"...\":
+   change = N]` trailer in a commit message. Returns nil if no trailer.
+   Anchored on `[git-p4:` so user-written prose containing `change = N`
+   does not produce false positives."
+  [msg]
+  (when msg
+    (when-let [[_ ch] (re-find
+                       #"\[git-p4:[^\]]*?change\s*=\s*(\d+)\s*\]"
+                       msg)]
+      (parse-long ch))))
+
 (defn- choose-mode
   [conn]
   (let [info (p4/info conn :mode :G)
@@ -116,20 +128,17 @@
   "Inspect a clj-p4 clone. Returns
    `{:target :head-sha :commit-count :last-change}`."
   [target & {:keys [ref] :or {ref "refs/heads/main"}}]
-  (let [shas (git/rev-list target ref)]
+  (let [shas (git/rev-list target ref)
+        msg  (let [{:keys [stdout-bytes]}
+                   (clj-p4.shell.proc/run!
+                    ["git" "-C" (str target) "log" "-1"
+                     "--pretty=%B" ref])]
+               (when stdout-bytes
+                 (String. ^bytes stdout-bytes "UTF-8")))]
     {:target       target
      :head-sha     (first shas)
      :commit-count (count shas)
-     :last-change  (let [{:keys [stdout-bytes]}
-                         (clj-p4.shell.proc/run!
-                          ["git" "-C" (str target) "log" "-1"
-                           "--pretty=%B" ref])
-                         msg (when stdout-bytes
-                               (String. ^bytes stdout-bytes "UTF-8"))]
-                     (when-let [[_ ch] (and msg
-                                            (re-find #"change\s*=\s*(\d+)"
-                                                     msg))]
-                       (parse-long ch)))}))
+     :last-change  (change-from-trailer msg)}))
 
 (defn sync!
   "Bring an existing clj-p4 clone at `target` up to date with the server.

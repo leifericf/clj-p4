@@ -18,6 +18,23 @@
       (doseq [c (.listFiles f)] (rm-rf c)))
     (.delete f)))
 
+(deftest change-from-trailer-test
+  (testing "matches a real git-p4 trailer"
+    (is (= 7 (#'api/change-from-trailer
+              "first\n\n[git-p4: depot-paths = \"//stream/main/\": change = 7]"))))
+
+  (testing "ignores prose with `change = N` outside a trailer"
+    (is (nil? (#'api/change-from-trailer "Fixed change = 42 in config")))
+    (is (nil? (#'api/change-from-trailer "tweak: change = 99 was wrong"))))
+
+  (testing "trailer with extra surrounding lines"
+    (is (= 13 (#'api/change-from-trailer
+               "subject line\n\nbody body\n\n[git-p4: depot-paths = \"//stream/main/\": change = 13]\n"))))
+
+  (testing "nil and empty input"
+    (is (nil? (#'api/change-from-trailer nil)))
+    (is (nil? (#'api/change-from-trailer "")))))
+
 (def ^:private mainline
   {:stream/name "//stream/main"
    :stream/parent nil
