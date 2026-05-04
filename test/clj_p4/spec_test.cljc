@@ -25,8 +25,17 @@
                "//depot/../escape"
                "//depot/sub/../up"
                "//depot/$weird"
-               "//depot with spaces"]]
-      (is (not (spec/depot-path? p)) (str (pr-str p) " should be invalid")))))
+               "//depot with spaces"
+               "//foo/.../bar"
+               "//foo/*/bar"
+               "//foo/.../*"]]
+      (is (not (spec/depot-path? p)) (str (pr-str p) " should be invalid"))))
+
+  (testing "wildcards only legal as final segment"
+    (is (spec/depot-path? "//foo/..."))
+    (is (spec/depot-path? "//foo/*"))
+    (is (spec/depot-path? "//foo/bar/baz"))
+    (is (nil? (spec/parse-depot-path "//foo/.../bar")))))
 
 (deftest parse-depot-path-test
   (is (= {:depot/raw      "//depot/ProjectA/main/..."

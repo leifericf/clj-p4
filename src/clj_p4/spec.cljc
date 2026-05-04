@@ -5,17 +5,39 @@
    in the project plan; this namespace is the authoritative gatekeeper."
   (:require [clojure.string :as str]))
 
-(def ^:private depot-path-re
-  #"//[A-Za-z0-9_][A-Za-z0-9_.\-]*(?:/[A-Za-z0-9_.\-]+|/\*|/\.\.\.)*")
+(def ^:private depot-name-re #"[A-Za-z0-9_][A-Za-z0-9_.\-]*")
+(def ^:private literal-seg-re #"[A-Za-z0-9_.\-]+")
+
+(defn- valid-literal-seg?
+  "A path segment is a literal name iff it matches the literal-name char
+   class AND is neither a wildcard token (`...`, `*`) nor the path-
+   traversal token (`..`)."
+  [seg]
+  (and (re-matches literal-seg-re seg)
+       (not (#{"..." ".." "*"} seg))))
 
 (defn depot-path?
-  "True if `s` looks like a Perforce depot path: starts with `//`, contains
-   only safe characters, and has no path-traversal `..` segment."
+  "True if `s` looks like a Perforce depot path: starts with `//`, has a
+   valid depot name, zero or more literal segments, and optionally ends
+   with a single wildcard segment (`/...` or `/*`). Wildcards are only
+   legal as the FINAL segment — P4's own grammar rejects ellipsis or
+   `*` mid-path."
   [s]
   (boolean
    (and (string? s)
-        (re-matches depot-path-re s)
-        (not (re-find #"(?:^|/)\.\.(?:/|$)" s)))))
+        (str/starts-with? s "//")
+        (let [trimmed (subs s 2)]
+          (when (seq trimmed)
+            (let [parts (str/split trimmed #"/")
+                  [depot & segs] parts
+                  segs (vec segs)]
+              (and (re-matches depot-name-re (or depot ""))
+                   (let [last-seg (peek segs)
+                         mid-segs (if (seq segs) (pop segs) [])]
+                     (and (every? valid-literal-seg? mid-segs)
+                          (or (nil? last-seg)
+                              (#{"..." "*"} last-seg)
+                              (valid-literal-seg? last-seg)))))))))))
 
 (defn parse-depot-path
   "Parse `s` into a DepotPath map: `{:depot/raw :depot/depot :depot/segments
