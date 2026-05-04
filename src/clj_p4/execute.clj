@@ -56,16 +56,22 @@
 
       :else local)))
 
-(defn- emit-blob-and-modify!
-  "Stream `p4 print` bytes for one file into fast-import as a blob, then
-   return the corresponding `M`-op for the commit."
-  [{:keys [conn git-handle]} change file-idx fr local]
-  (let [mark   (blob-mark change file-idx)
-        baos   (ByteArrayOutputStream.)]
+(defn- fetch-blob-bytes!
+  "Run `p4 print` for one file and return the bytes. Honours
+   `:max-print-bytes` cap; throws ex-info if exceeded."
+  [{:keys [conn max-print-bytes]} change fr]
+  (let [baos (ByteArrayOutputStream.)]
     (p4/print-bytes! conn (str (:rev/depot fr) "@" change) baos
                      :keyword-expand? (keyword-expand? fr))
-    (git/blob! git-handle mark (.toByteArray baos))
-    {:op :M :mode (file-mode fr) :mark mark :path local}))
+    (let [bs (.toByteArray baos)]
+      (when (and max-print-bytes (> (alength bs) (long max-print-bytes)))
+        (throw (ex-info (str "p4 print exceeded :max-print-bytes ("
+                             max-print-bytes ")")
+                        {:clj-p4/error :max-print-bytes-exceeded
+                         :depot        (:rev/depot fr)
+                         :size         (alength bs)
+                         :max          max-print-bytes})))
+      bs)))
 
 (defn- pair-moves
   "Pair `:move/delete` and `:move/add` entries in `files` by `:rev/moved-file`.
@@ -96,11 +102,19 @@
                           #{} pairs)]
     {:pairs pairs :paired paired}))
 
-(defn- file-ops-for-change
-  "Build the ordered vector of fast-import file ops for one change.
-   Files that map to no local path (excluded/ignored/no-match) are skipped.
-   move/delete + move/add pairs collapse into a single `R` rename op."
-  [ctx {:keys [p4/change p4/files]}]
+(defn- materialize-ops
+  "Walk a changelist's files and decide what fast-import op each one
+   produces — without doing any I/O. Returns a vector of op maps:
+   - `{:op :M :mode :path :fr :file-idx}` (modify; bytes fetched later)
+   - `{:op :D :path}` (delete)
+   - `{:op :R :from :to}` (rename; emitted in addition to a :M when the
+     paired :move/add carries new content)
+
+   Move pairs may produce `[:R ...] [:M ...]` together so that move+edit
+   commits keep the new content. The `:M` is always added: fast-import
+   tolerates redundant content writes after `R`, and we cannot tell
+   without comparing bytes whether the move was content-preserving."
+  [ctx {:keys [p4/files]}]
   (let [{:keys [pairs paired]} (pair-moves files)]
     (loop [out [], i 0, fs files]
       (if-let [fr (first fs)]
@@ -115,24 +129,65 @@
             (let [{:keys [delete-fr]} (get pairs depot)
                   old-local (map-rev->local ctx delete-fr)]
               (if (and old-local (not= old-local local))
-                (recur (conj out {:op :R :from old-local :to local})
+                (recur (-> out
+                           (conj {:op :R :from old-local :to local})
+                           (conj {:op :M :mode (file-mode fr) :path local
+                                  :fr fr :file-idx i}))
                        (inc i) (rest fs))
-                ;; partner mapped out by view — fall back to plain modify
-                (recur (conj out (emit-blob-and-modify! ctx change i fr local))
+                ;; partner mapped out by view — emit a plain modify only
+                (recur (conj out {:op :M :mode (file-mode fr) :path local
+                                  :fr fr :file-idx i})
                        (inc i) (rest fs))))
 
             (and (= :move/delete (:rev/action fr))
                  (contains? paired depot))
-            ;; Already absorbed by the partner :move/add as `R`.
+            ;; Already absorbed by the partner :move/add.
             (recur out (inc i) (rest fs))
 
             (#{:delete :move/delete} (:rev/action fr))
             (recur (conj out {:op :D :path local}) (inc i) (rest fs))
 
             :else
-            (recur (conj out (emit-blob-and-modify! ctx change i fr local))
+            (recur (conj out {:op :M :mode (file-mode fr) :path local
+                              :fr fr :file-idx i})
                    (inc i) (rest fs))))
         out))))
+
+(defn- fetch-blobs!
+  "Fetch bytes for every `:M` op in `ops` using up to `paral` workers.
+   Returns ops with `:bytes` populated on each `:M`. Sequential
+   (`paral <= 1`) preserves the simple call shape and any error
+   propagates through the same stack the caller expects."
+  [ctx change ops paral]
+  (let [fetch-one (fn [op]
+                    (if (= :M (:op op))
+                      (assoc op :bytes (fetch-blob-bytes! ctx change (:fr op)))
+                      op))]
+    (if (or (nil? paral) (<= paral 1))
+      (mapv fetch-one ops)
+      (vec (pmap fetch-one ops)))))
+
+(defn- emit-ops!
+  "Walk `ops` (already byte-loaded) and serialise them into fast-import.
+   Writes the `M` ops' blobs first; returns a vector of op maps shaped
+   for `git/emit-commit!`'s `:files` key."
+  [{:keys [git-handle]} change ops]
+  (mapv (fn [op]
+          (case (:op op)
+            :D {:op :D :path (:path op)}
+            :R {:op :R :from (:from op) :to (:to op)}
+            :M (let [mark (blob-mark change (:file-idx op))]
+                 (git/blob! git-handle mark (:bytes op))
+                 {:op :M :mode (:mode op) :mark mark :path (:path op)})))
+        ops))
+
+(defn- file-ops-for-change
+  "Phase orchestration: materialize → parallel-fetch → serial-emit."
+  [ctx {:keys [p4/change] :as cl}]
+  (let [paral (:fetch-parallelism ctx)
+        ops   (materialize-ops ctx cl)
+        ops'  (fetch-blobs! ctx change ops paral)]
+    (emit-ops! ctx change ops')))
 
 (defn- p4-trailer
   "Format the git-p4-compatible commit trailer. Uses the stream name the
@@ -181,16 +236,19 @@
 
 (defn- initial-ctx
   [plan {:keys [git-handle conn ref]}]
-  {:plan        plan
-   :conn        conn
-   :git-handle  git-handle
-   :view        (:plan/view plan)
-   :excludes    (:plan/excludes plan)
-   :target      (:plan/target plan)
-   :stream-name (:stream/name (:plan/stream plan))
-   :ref         (or ref "refs/heads/main")
-   :last-change (when (= :sync (:plan/kind plan))
-                  (:plan/since-change plan))})
+  (let [opts (:plan/options plan)]
+    {:plan              plan
+     :conn              conn
+     :git-handle        git-handle
+     :view              (:plan/view plan)
+     :excludes          (:plan/excludes plan)
+     :target            (:plan/target plan)
+     :stream-name       (:stream/name (:plan/stream plan))
+     :ref               (or ref "refs/heads/main")
+     :fetch-parallelism (:fetch-parallelism opts)
+     :max-print-bytes   (:max-print-bytes opts)
+     :last-change       (when (= :sync (:plan/kind plan))
+                          (:plan/since-change plan))}))
 
 (defn execute!
   "Execute `plan` against a populated git repo at `(:plan/target plan)`.
