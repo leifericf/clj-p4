@@ -1,0 +1,17 @@
+services:
+  p4d:
+    build: .
+    image: clj-p4-p4d:local
+    container_name: clj-p4-p4d
+    ports:
+      - "1666:1666"
+    healthcheck:
+      test: ["CMD-SHELL", "p4 -p tcp:localhost:1666 info >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    volumes:
+      - p4-data:/p4
+
+volumes:
+  p4-data:
