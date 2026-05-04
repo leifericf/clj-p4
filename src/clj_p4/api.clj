@@ -201,7 +201,7 @@
     conn source
     (fn [eph-conn {:client/keys [name view-lines]}]
       (let [view-val (view/client-view->view
-                      view-lines :stream-name (:stream/name classic-source))]
+                      view-lines :source-name (:stream/name classic-source))]
         (do-clone! ctx eph-conn (str "//" name "/...")
                    [classic-source] view-val)))))
 
@@ -211,7 +211,7 @@
    The `with-stream-client-or-fallback` dispatch in `clone-one!` is the
    only caller — it handles the ephemeral-client lifecycle."
   [{:keys [source chain] :as ctx} eph-conn client-name view-lines]
-  (let [view-val (view/client-view->view view-lines :stream-name source)]
+  (let [view-val (view/client-view->view view-lines :source-name source)]
     (do-clone! ctx eph-conn (str "//" client-name "/...")
                chain view-val)))
 
@@ -392,7 +392,7 @@
 (defn- run-ephemeral-sync!
   "Body of an ephemeral-client sync. Caller provides the live client."
   [{:keys [source chain] :as ctx} eph-conn client-name view-lines]
-  (let [view-val (view/client-view->view view-lines :stream-name source)]
+  (let [view-val (view/client-view->view view-lines :source-name source)]
     (do-sync! ctx eph-conn (str "//" client-name "/...")
               chain view-val)))
 
@@ -406,7 +406,7 @@
     conn source
     (fn [eph-conn {:client/keys [name view-lines]}]
       (let [view-val (view/client-view->view
-                      view-lines :stream-name (:stream/name classic-source))]
+                      view-lines :source-name (:stream/name classic-source))]
         (do-sync! ctx eph-conn (str "//" name "/...")
                   [classic-source] view-val)))))
 

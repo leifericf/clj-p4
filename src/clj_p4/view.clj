@@ -255,7 +255,7 @@
 
    Per P4's own rule, later view entries override earlier ones, so we
    reverse the entries vector at compile time (matches `effective-view`)."
-  [view-lines & {:keys [stream-name]}]
+  [view-lines & {:keys [source-name]}]
   (let [parsed  (->> view-lines
                      (map str/trim)
                      (remove str/blank?)
@@ -264,7 +264,7 @@
                      (mapv compile-client-view-entry)
                      rseq
                      vec)]
-    {:view/stream  stream-name
+    {:view/stream  source-name
      :view/entries entries
      :view/remap   []
      :view/ignores []}))
