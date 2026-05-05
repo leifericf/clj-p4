@@ -334,7 +334,13 @@
    the change that produced that rev. Fanned out via `bounded-pmap` so
    the cost is bounded by `:fetch-parallelism`. Pre-filtering through
    `map-rev->local` means excluded files (e.g. all-binary integrate
-   re-baselines under `:exclude-binaries?`) cost zero P4 calls."
+   re-baselines under `:exclude-binaries?`) cost zero P4 calls.
+
+   `:proc-failed` ex-info from a per-file lookup (transient connectivity
+   or auth glitch) is silently downgraded to nil — the file simply
+   doesn't contribute a candidate. Any other exception class
+   (`NullPointerException`, parser bugs, contract violations) propagates
+   so a real bug can't hide behind merge-detection silence."
   [{:keys [conn fetch-parallelism] :as ctx} {:p4/keys [change files]} imported?]
   (let [integrate-files (->> files
                              (filter #(= :integrate (:rev/action %)))
@@ -352,7 +358,10 @@
                            (str (:integ/from-file row)
                                 "#"
                                 (:integ/end-from-rev row))))))
-            (catch Exception _ nil)))]
+            (catch clojure.lang.ExceptionInfo e
+              (when-not (= :proc-failed (:clj-p4/error (ex-data e)))
+                (throw e))
+              nil)))]
     (when (seq integrate-files)
       (let [sources (->> integrate-files
                          (bounded-pmap fetch-parallelism lookup-source)
@@ -454,13 +463,25 @@
    `Revision:` resolves to a changelist number we just imported. Labels
    that point at unimported or unparseable revisions are skipped
    silently (a label can legitimately tag a single file revision rather
-   than a whole CL)."
+   than a whole CL).
+
+   `:proc-failed` ex-info from `p4 labels` or per-label `p4 label -o` is
+   silently downgraded (treat as no labels / skip this label). Any other
+   exception class propagates."
   [{:keys [git-handle conn ref] :as ctx} imported-changes]
   (let [imported (set imported-changes)
-        labels   (try (p4/labels conn) (catch Exception _ []))]
+        labels   (try (p4/labels conn)
+                      (catch clojure.lang.ExceptionInfo e
+                        (when-not (= :proc-failed (:clj-p4/error (ex-data e)))
+                          (throw e))
+                        []))]
     (doseq [{:label/keys [name]} labels
             :when name
-            :let [spec   (try (p4/label-spec conn name) (catch Exception _ nil))
+            :let [spec   (try (p4/label-spec conn name)
+                              (catch clojure.lang.ExceptionInfo e
+                                (when-not (= :proc-failed (:clj-p4/error (ex-data e)))
+                                  (throw e))
+                                nil))
                   change (parse-revision-change (:label/revision spec))]
             :when (and change (contains? imported change))]
       (git/emit-tag! git-handle

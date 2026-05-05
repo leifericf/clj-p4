@@ -626,6 +626,123 @@
                 (is (= (str/trim tag-sha) first-sha))))))
         (finally (rm-rf d))))))
 
+(deftest p4-error-swallow-narrowed-test
+  (testing "merge-source-for-cl propagates non-:proc-failed exceptions"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))
+          cl100 {:p4/change 100 :p4/user "x" :p4/time 0 :p4/desc "first"
+                 :p4/files [{:rev/depot "//stream/main/src/a.cpp"
+                             :rev/rev 1 :rev/action :add :rev/type :text
+                             :rev/flags #{} :rev/keyword-flags #{}}]}
+          cl101 {:p4/change 101 :p4/user "x" :p4/time 1000
+                 :p4/desc "integrate"
+                 :p4/files [{:rev/depot "//stream/main/src/a.cpp"
+                             :rev/rev 2 :rev/action :integrate :rev/type :text
+                             :rev/flags #{} :rev/keyword-flags #{}}]}]
+      (try
+        (let [e (try
+                  (with-redefs [p4/info         (constantly info-2024)
+                                p4/stream-chain (constantly [mainline])
+                                p4/changes      (fn [_ _ & _]
+                                                  [{:p4/change 100} {:p4/change 101}])
+                                p4/describe     (fn [_ n]
+                                                  (case n 100 cl100 101 cl101))
+                                p4/print-bytes! print-bytes-stub
+                                p4/integrated   (fn [& _]
+                                                  (throw (NullPointerException.
+                                                          "lookup-source bug")))]
+                    (api/clone! {:conn   {:p4/port "h:1666"}
+                                 :source "//stream/main"
+                                 :target target}))
+                  :no-throw
+                  (catch Throwable t t))]
+          (is (instance? NullPointerException e)
+              (str "NPE from p4/integrated should propagate, got " (pr-str e))))
+        (finally (rm-rf d)))))
+
+  (testing "merge-source-for-cl still swallows :proc-failed silently"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))
+          cl100 {:p4/change 100 :p4/user "x" :p4/time 0 :p4/desc "first"
+                 :p4/files [{:rev/depot "//stream/main/src/a.cpp"
+                             :rev/rev 1 :rev/action :add :rev/type :text
+                             :rev/flags #{} :rev/keyword-flags #{}}]}
+          cl101 {:p4/change 101 :p4/user "x" :p4/time 1000
+                 :p4/desc "integrate"
+                 :p4/files [{:rev/depot "//stream/main/src/a.cpp"
+                             :rev/rev 2 :rev/action :integrate :rev/type :text
+                             :rev/flags #{} :rev/keyword-flags #{}}]}]
+      (try
+        (with-redefs [p4/info         (constantly info-2024)
+                      p4/stream-chain (constantly [mainline])
+                      p4/changes      (fn [_ _ & _]
+                                        [{:p4/change 100} {:p4/change 101}])
+                      p4/describe     (fn [_ n] (case n 100 cl100 101 cl101))
+                      p4/print-bytes! print-bytes-stub
+                      p4/integrated   (fn [& _]
+                                        (throw (ex-info "transient p4 failure"
+                                                        {:clj-p4/error :proc-failed
+                                                         :exit 1})))]
+          (api/clone! {:conn   {:p4/port "h:1666"}
+                       :source "//stream/main"
+                       :target target})
+          (testing "the integrate commit still emits, just without a 2nd parent"
+            (let [{:keys [stdout-bytes]}
+                  (proc/run-checked! ["git" "-C" target "log" "-1"
+                                      "--pretty=%P" "refs/heads/main"])
+                  parents (str/split (str/trim
+                                      (String. ^bytes stdout-bytes "UTF-8"))
+                                     #"\s+")]
+              (is (= 1 (count parents))))))
+        (finally (rm-rf d)))))
+
+  (testing "emit-labels! propagates non-:proc-failed from p4/labels"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))]
+      (try
+        (let [e (try
+                  (with-redefs [p4/info         (constantly info-2024)
+                                p4/stream-chain (constantly [mainline])
+                                p4/changes      (fn [_ _ & _] [{:p4/change 100}])
+                                p4/describe     (fn [_ n] (describe-fixture n))
+                                p4/print-bytes! print-bytes-stub
+                                p4/labels       (fn [& _]
+                                                  (throw (NullPointerException.
+                                                          "labels bug")))]
+                    (api/clone! {:conn   {:p4/port "h:1666"}
+                                 :source "//stream/main"
+                                 :target target
+                                 :emit-labels? true}))
+                  :no-throw
+                  (catch Throwable t t))]
+          (is (instance? NullPointerException e)
+              (str "NPE from p4/labels should propagate, got " (pr-str e))))
+        (finally (rm-rf d)))))
+
+  (testing "emit-labels! propagates non-:proc-failed from p4/label-spec"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))]
+      (try
+        (let [e (try
+                  (with-redefs [p4/info         (constantly info-2024)
+                                p4/stream-chain (constantly [mainline])
+                                p4/changes      (fn [_ _ & _] [{:p4/change 100}])
+                                p4/describe     (fn [_ n] (describe-fixture n))
+                                p4/print-bytes! print-bytes-stub
+                                p4/labels       (fn [& _] [{:label/name "v1"}])
+                                p4/label-spec   (fn [& _]
+                                                  (throw (NullPointerException.
+                                                          "label-spec bug")))]
+                    (api/clone! {:conn   {:p4/port "h:1666"}
+                                 :source "//stream/main"
+                                 :target target
+                                 :emit-labels? true}))
+                  :no-throw
+                  (catch Throwable t t))]
+          (is (instance? NullPointerException e)
+              (str "NPE from p4/label-spec should propagate, got " (pr-str e))))
+        (finally (rm-rf d))))))
+
 (deftest lookahead-prefetches-describes-test
   (testing ":lookahead N starts describe(M+1) before commit(M) finishes"
     (let [d (tmp-dir)

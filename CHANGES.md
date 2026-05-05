@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- `clj-p4.runner/merge-source-for-cl` and `emit-labels!` no longer
+  swallow arbitrary exceptions during `p4 integrated` / `p4 fstat` /
+  `p4 labels` / `p4 label -o` lookups. Only `:clj-p4/error :proc-failed`
+  ex-info — the documented "transient subprocess failure" class — is
+  silently downgraded; everything else (parser bugs, `NullPointerException`,
+  unexpected exception classes) now propagates to the caller. Same
+  behaviour for the common case, but real bugs no longer hide behind
+  merge-detection / label-import silence.
 - `clj-p4.excludes/pattern->re` rejects the degenerate `""` and `"/"`
   patterns with `:clj-p4/error :invalid-pattern` instead of crashing
   with a JVM `StringIndexOutOfBoundsException`.
