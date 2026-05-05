@@ -65,3 +65,61 @@
     (is (= "*.exe" (ex/matching-pattern compiled "foo.exe")))
     (is (= "*.dll" (ex/matching-pattern compiled "lib/util.dll")))
     (is (nil? (ex/matching-pattern compiled "foo.cpp")))))
+
+(deftest binary-rev?-test
+  (testing "Perforce types P4 classifies as binary"
+    (is (ex/binary-rev? {:rev/type :binary}))
+    (is (ex/binary-rev? {:rev/type :apple}))
+    (is (ex/binary-rev? {:rev/type :resource})))
+
+  (testing "Perforce types treated as text-like — kept"
+    (is (not (ex/binary-rev? {:rev/type :text})))
+    (is (not (ex/binary-rev? {:rev/type :utf8})))
+    (is (not (ex/binary-rev? {:rev/type :utf16})))
+    (is (not (ex/binary-rev? {:rev/type :unicode})))
+    (is (not (ex/binary-rev? {:rev/type :symlink}))))
+
+  (testing "missing :rev/type does not crash and is not binary"
+    (is (not (ex/binary-rev? {}))))
+
+  (testing "binary-rev-types is the canonical set"
+    (is (= #{:binary :apple :resource} ex/binary-rev-types))))
+
+(deftest categories-builtin-test
+  (testing "binary-categories returns every key in the built-in resource"
+    (let [cats (ex/binary-categories)]
+      (is (set? cats))
+      (is (contains? cats :images))
+      (is (contains? cats :audio))
+      (is (contains? cats :engine-assets))))
+
+  (testing ":categories with a subset selects from the built-in resource"
+    (let [out (ex/exclude-patterns {:categories #{:images}})]
+      (is (some #{"*.png"} out))
+      (is (some #{"*.svg"} out))
+      (is (not (some #{"*.wav"} out)))
+      (is (not (some #{"*.exe"} out)))))
+
+  (testing ":categories :all unions every category"
+    (let [out (ex/exclude-patterns {:categories :all})]
+      (is (some #{"*.png"} out))     ; images
+      (is (some #{"*.wav"} out))     ; audio
+      (is (some #{"*.uasset"} out))  ; engine-assets
+      (is (some #{"*.dll"} out))))   ; compiled
+
+  (testing ":categories with :includes narrows the union"
+    (let [out (ex/exclude-patterns {:categories #{:images}
+                                    :includes ["*.svg"]})]
+      (is (some #{"*.png"} out))
+      (is (not (some #{"*.svg"} out)))))
+
+  (testing ":categories with :extra-excludes appends after built-ins"
+    (let [out (ex/exclude-patterns {:categories #{:images}
+                                    :extra-excludes ["*.myfmt"]})]
+      (is (some #{"*.png"} out))
+      (is (some #{"*.myfmt"} out))))
+
+  (testing "user-supplied :resource takes precedence over built-ins"
+    (let [out (ex/exclude-patterns {:resource   {:custom ["*.weird"]}
+                                    :categories :all})]
+      (is (= ["*.weird"] out)))))

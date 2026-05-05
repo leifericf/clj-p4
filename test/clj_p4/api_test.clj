@@ -916,6 +916,20 @@
                           :target target})))
         (finally (rm-rf d))))))
 
+(deftest exclude-and-categories-mutually-exclusive-test
+  (testing "passing both :exclude and :exclude-categories throws"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))]
+      (try
+        (is (thrown-with-msg?
+             clojure.lang.ExceptionInfo #"mutually exclusive"
+             (api/clone! {:conn               {:p4/port "h:1666"}
+                          :source             "//stream/main"
+                          :target             target
+                          :exclude            (clj-p4.excludes/compile-patterns ["*.bin"])
+                          :exclude-categories :all})))
+        (finally (rm-rf d))))))
+
 (deftest source-ref-override-test
   (testing ":source->ref overrides default basename-derived refs"
     (let [d (tmp-dir)
