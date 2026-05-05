@@ -915,6 +915,27 @@
              (api/clone! {:conn   {:p4/port "h:1666"}
                           :target target})))
         (finally (rm-rf d)))))
+  (testing "passing duplicate entries in :sources throws"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))]
+      (try
+        (let [e (try (api/clone! {:conn    {:p4/port "h:1666"}
+                                  :target  target
+                                  :sources ["//stream/main" "//stream/main"]})
+                     :no-throw
+                     (catch clojure.lang.ExceptionInfo e e))]
+          (is (instance? clojure.lang.ExceptionInfo e))
+          (is (= :duplicate-sources (:clj-p4/error (ex-data e))))
+          (is (= ["//stream/main"] (:duplicates (ex-data e)))))
+        (let [e (try (api/fetch! {:conn    {:p4/port "h:1666"}
+                                  :target  target
+                                  :sources ["//s/a" "//s/a" "//s/b" "//s/b"]})
+                     :no-throw
+                     (catch clojure.lang.ExceptionInfo e e))]
+          (is (instance? clojure.lang.ExceptionInfo e))
+          (is (= :duplicate-sources (:clj-p4/error (ex-data e))))
+          (is (= #{"//s/a" "//s/b"} (set (:duplicates (ex-data e))))))
+        (finally (rm-rf d)))))
   (testing "passing :sources [] throws — empty collection is not a source"
     (let [d (tmp-dir)
           target (str (io/file d "repo"))]

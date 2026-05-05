@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- `clone!` / `fetch!` reject `:sources` containing duplicate entries
+  with `:clj-p4/error :duplicate-sources`. Previously a duplicated source
+  ran `clone-one!` / `fetch-one!` twice on the same source into the same
+  ref, with undefined results.
 - `clone!` / `fetch!` reject `:sources []` (an empty collection). The
   previous `(or source sources)` predicate counted `[]` as truthy, so
   the call returned `[]` having done no work — the user thought they

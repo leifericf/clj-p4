@@ -465,6 +465,12 @@
   (when-not (or source (seq sources))
     (throw (ex-info "clone! needs :source or :sources"
                     {:clj-p4/error :no-source})))
+  (when (and sources (not= (count sources) (count (distinct sources))))
+    (let [dups (->> sources frequencies (keep (fn [[s n]] (when (> n 1) s))) vec)]
+      (throw (ex-info (str "clone! :sources contains duplicates: " (pr-str dups))
+                      {:clj-p4/error :duplicate-sources
+                       :sources      sources
+                       :duplicates   dups}))))
   (assert-target-empty! target)
   (let [exclude' (resolve-exclude args)
         base (-> args
@@ -623,6 +629,12 @@
   (when-not (or source (seq sources))
     (throw (ex-info "fetch! needs :source or :sources"
                     {:clj-p4/error :no-source})))
+  (when (and sources (not= (count sources) (count (distinct sources))))
+    (let [dups (->> sources frequencies (keep (fn [[s n]] (when (> n 1) s))) vec)]
+      (throw (ex-info (str "fetch! :sources contains duplicates: " (pr-str dups))
+                      {:clj-p4/error :duplicate-sources
+                       :sources      sources
+                       :duplicates   dups}))))
   (let [exclude' (resolve-exclude args)
         base (-> args
                  (dissoc :source :sources :source->ref :ref :exclude-categories)
