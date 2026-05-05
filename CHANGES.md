@@ -29,8 +29,14 @@ type so unknown extensions are caught for free.
   of category keywords (`:images`, `:audio`, `:video`, `:models`,
   `:archives`, `:fonts`, `:documents`, `:compiled`, `:engine-assets`)
   selecting from a built-in `binaries.edn` resource. Compiled
-  internally; mutually exclusive with the existing `:exclude` (raw
-  compiled patterns), which now throws if both are set.
+  internally.
+- `clone!` / `fetch!` accept `:extra-excludes` and `:includes` (seq
+  of pattern strings) — same gitignore-flavoured grammar as the
+  built-in patterns. Compose with `:exclude-categories` to add or
+  whitelist on top of a category selection; usable standalone for
+  ad-hoc patterns. The pre-compiled `:exclude` is mutually exclusive
+  with all three high-level pattern keys, throwing when both shapes
+  are set.
 - `clj-p4.excludes/binary-rev?` and `clj-p4.excludes/binary-rev-types`
   — public predicate and the source set of base types it consults.
   Designed for use as a runner `:exclude-fn`, but composable anywhere

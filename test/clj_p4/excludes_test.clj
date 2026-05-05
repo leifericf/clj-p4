@@ -131,4 +131,17 @@
   (testing "user-supplied :resource takes precedence over built-ins"
     (let [out (ex/exclude-patterns {:resource   {:custom ["*.weird"]}
                                     :categories :all})]
-      (is (= ["*.weird"] out)))))
+      (is (= ["*.weird"] out))))
+
+  (testing ":categories + :extra-excludes (Noumenon-style: drop *.obj on top of :all)"
+    (let [out (ex/exclude-patterns {:categories     :all
+                                    :extra-excludes ["*.obj"]})]
+      (is (some #{"*.png"} out))     ; built-in still present
+      (is (some #{"*.obj"} out))     ; explicit add wins
+      (is (not (some #{"*.svg"} out))))) ; still text — not in built-ins
+
+  (testing ":categories + :includes whitelists specific patterns from the union"
+    (let [out (ex/exclude-patterns {:categories :all
+                                    :includes   ["*.psd"]})]
+      (is (some #{"*.png"} out))
+      (is (not (some #{"*.psd"} out))))))

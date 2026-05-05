@@ -38,8 +38,10 @@ clj-p4 is strictly P4 to Git. It will never issue a Perforce command that mutate
 | `:ref` | Single-source destination ref. Default `refs/heads/main`. |
 | `:max-changes` | Cap on number of changelists imported. *(`clone!` only.)* |
 | `:exclude-binaries?` | Drop revisions Perforce itself classifies as binary (`:rev/type` ∈ `:binary` / `:apple` / `:resource`). Default `true` — see [Filtering binaries](#filtering-binaries) for why. Set to `false` to import every revision regardless of type. |
-| `:exclude-categories` | `:all` or a set of category keywords (`#{:images :audio :video :models :archives :fonts :documents :compiled :engine-assets}`) selecting from clj-p4's built-in `binaries.edn`. Compiled internally. Mutually exclusive with `:exclude`. Composes with `:exclude-binaries?`. |
-| `:exclude` | Vector of `[pattern regex]` filtering files at clone time (output of `clj-p4.excludes/compile-patterns`). For category-based selection, prefer `:exclude-categories`. |
+| `:exclude-categories` | `:all` or a set of category keywords (`#{:images :audio :video :models :archives :fonts :documents :compiled :engine-assets}`) selecting from clj-p4's built-in `binaries.edn`. Composes with `:extra-excludes`, `:includes`, and `:exclude-binaries?`. |
+| `:extra-excludes` | Seq of pattern strings to add on top of `:exclude-categories` (or used standalone). E.g. `["*.obj"]` to drop text Wavefront mesh dumps without dropping the rest of your text formats. |
+| `:includes` | Seq of pattern strings to whitelist back in, removing them from the union of categories + extras. E.g. `["*.psd"]` with `:exclude-categories :all` keeps PSDs as source. |
+| `:exclude` | Vector of `[pattern regex]` filtering files at clone time (output of `clj-p4.excludes/compile-patterns`). Low-level escape hatch; mutually exclusive with the higher-level pattern options above. |
 | `:fetch-parallelism` | Parallel `p4 print` workers per changelist (`pmap`). |
 | `:max-print-bytes` | Per-file `p4 print` cap; throws `:clj-p4/error :max-print-bytes-exceeded` above. |
 | `:lookahead` | Background `p4 describe` futures prefetching upcoming changelists. |
@@ -176,7 +178,29 @@ A built-in `binaries.edn` ships nine generic categories. Pass `:all` or a subset
 
 The curated list is deliberately conservative: an extension only appears here if it is *always* a binary container, regardless of variant. Source-form text and config — `.svg` (XML), `.gltf` (JSON), `.dae` (COLLADA), `.obj` (Wavefront text), Unity scene/prefab/asset YAML, Unreal `.upluginmanifest` — is intentionally omitted. Type-based filtering catches their binary cousins (`*.glb`, etc.) automatically; their text cousins are code, not assets, and usually belong in git alongside the source.
 
-For finer control, drop down to `clj-p4.excludes/exclude-patterns` directly: `:extra-excludes` adds patterns, `:includes` removes them, and `:resource` lets you swap in your own category map entirely. Compile the result with `clj-p4.excludes/compile-patterns` and pass it as `:exclude` (mutually exclusive with `:exclude-categories`).
+### Mixing categories with custom patterns
+
+Most projects don't fit a single category neatly — text-form files like `.obj` (Wavefront mesh) or `.gltf` (JSON model) might be noise in one repo and a hand-edited source in another. Compose the built-in categories with your own patterns via `:extra-excludes` (drop more) and `:includes` (keep specific patterns from the union):
+
+```clojure
+;; Code-analysis import: keep .sln/.csproj (analysis input) but drop
+;; large .obj mesh dumps that aren't useful for review.
+(clj-p4/clone! {:conn   ...
+                :source "//depot/game/main"
+                :target "/tmp/game.git"
+                :exclude-categories :all
+                :extra-excludes     ["*.obj"]})
+
+;; Web app import: drop most binaries but keep PSD sources for the
+;; design team's history.
+(clj-p4/clone! {... :exclude-categories :all
+                    :includes           ["*.psd"]})
+
+;; No categories — just a few custom patterns.
+(clj-p4/clone! {... :extra-excludes ["*.cache" "*.bak"]})
+```
+
+For full control of the category map (or to ignore the built-in altogether), call `clj-p4.excludes/exclude-patterns` directly with `:resource` set to your own category → patterns map, compile with `clj-p4.excludes/compile-patterns`, and pass the result as `:exclude`. This low-level path is mutually exclusive with the higher-level `:exclude-categories` / `:extra-excludes` / `:includes` options.
 
 ### What gets filtered server-side?
 

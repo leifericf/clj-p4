@@ -34,23 +34,38 @@
                        :args         args})))))
 
 (defn- resolve-exclude
-  "Resolve the compiled `:exclude` vector for `clone!` / `fetch!` from
-   `:exclude` (already-compiled patterns) and/or `:exclude-categories`
-   (selection from clj-p4's built-in `binaries.edn`). Throws if both are
-   set — the user should pick one source of patterns to keep ordering
-   and override semantics unambiguous. Returns nil when neither is set."
-  [{:keys [exclude exclude-categories]}]
-  (when (and exclude exclude-categories)
-    (throw (ex-info
-            ":exclude and :exclude-categories are mutually exclusive — pass one or the other"
-            {:clj-p4/error       :exclude-and-categories-set
-             :exclude            exclude
-             :exclude-categories exclude-categories})))
-  (cond
-    exclude            exclude
-    exclude-categories (-> {:categories exclude-categories}
-                           excludes/exclude-patterns
-                           excludes/compile-patterns)))
+  "Resolve the compiled `:exclude` vector for `clone!` / `fetch!`.
+
+   The high-level path composes three string-pattern sources: built-in
+   categories (`:exclude-categories`), additional patterns to drop
+   (`:extra-excludes`), and patterns to whitelist back in (`:includes`).
+   They run through `excludes/exclude-patterns` + `compile-patterns`.
+
+   The low-level path is `:exclude` — a vector of already-compiled
+   `[pattern regex]` pairs the caller built themselves. It is mutually
+   exclusive with the high-level keys: pass one *or* the other so
+   ordering and override semantics stay unambiguous.
+
+   Returns nil when no exclusion option is set."
+  [{:keys [exclude exclude-categories extra-excludes includes]}]
+  (let [high-level? (or exclude-categories extra-excludes includes)]
+    (when (and exclude high-level?)
+      (throw (ex-info
+              (str ":exclude (pre-compiled patterns) is mutually exclusive "
+                   "with :exclude-categories / :extra-excludes / :includes "
+                   "— pass one set of inputs or the other")
+              {:clj-p4/error       :exclude-and-high-level-set
+               :exclude            exclude
+               :exclude-categories exclude-categories
+               :extra-excludes     extra-excludes
+               :includes           includes})))
+    (cond
+      exclude     exclude
+      high-level? (-> {:categories     exclude-categories
+                       :extra-excludes extra-excludes
+                       :includes       includes}
+                      excludes/exclude-patterns
+                      excludes/compile-patterns))))
 
 (defn available?
   "True if `p4` is on PATH and answers `p4 -V`. Cheap and offline."
@@ -385,13 +400,25 @@
                         import every revision regardless of type.
      :exclude-categories `:all` or a set of category keywords (e.g.
                         `#{:images :audio}`) selecting from clj-p4's
-                        built-in `binaries.edn`. Mutually exclusive with
-                        `:exclude`. Composes with `:exclude-binaries?`.
+                        built-in `binaries.edn`. Composes with
+                        `:extra-excludes`, `:includes`, and
+                        `:exclude-binaries?`.
+     :extra-excludes    seq of pattern strings to add on top of
+                        `:exclude-categories` (or used standalone).
+                        Same gitignore-flavoured grammar as the
+                        built-in patterns. E.g. `[\"*.obj\"]` to drop
+                        text Wavefront mesh dumps in a depot whose
+                        project/solution files you otherwise want kept.
+     :includes          seq of pattern strings to whitelist back in,
+                        removing them from the union of categories +
+                        extras. E.g. `[\"*.psd\"]` with
+                        `:exclude-categories :all` keeps PSDs as
+                        source while dropping every other image.
      :exclude           pre-compiled exclude patterns (vector of
                         `[pat re]`, output of
-                        `clj-p4.excludes/compile-patterns`). For
-                        category-based selection, prefer
-                        `:exclude-categories`.
+                        `clj-p4.excludes/compile-patterns`). Low-level
+                        escape hatch; mutually exclusive with the
+                        higher-level pattern options above.
      :fetch-parallelism N parallel `p4 print` calls per changelist (1 = sequential)
      :max-print-bytes   cap on per-file `p4 print` size; throws above
      :lookahead         N upcoming changelists to `p4 describe` in parallel

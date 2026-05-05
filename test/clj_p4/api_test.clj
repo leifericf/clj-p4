@@ -916,8 +916,8 @@
                           :target target})))
         (finally (rm-rf d))))))
 
-(deftest exclude-and-categories-mutually-exclusive-test
-  (testing "passing both :exclude and :exclude-categories throws"
+(deftest exclude-and-high-level-mutually-exclusive-test
+  (testing "passing :exclude alongside :exclude-categories throws"
     (let [d (tmp-dir)
           target (str (io/file d "repo"))]
       (try
@@ -928,6 +928,30 @@
                           :target             target
                           :exclude            (clj-p4.excludes/compile-patterns ["*.bin"])
                           :exclude-categories :all})))
+        (finally (rm-rf d)))))
+  (testing "passing :exclude alongside :extra-excludes throws"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))]
+      (try
+        (is (thrown-with-msg?
+             clojure.lang.ExceptionInfo #"mutually exclusive"
+             (api/clone! {:conn           {:p4/port "h:1666"}
+                          :source         "//stream/main"
+                          :target         target
+                          :exclude        (clj-p4.excludes/compile-patterns ["*.bin"])
+                          :extra-excludes ["*.obj"]})))
+        (finally (rm-rf d)))))
+  (testing "passing :exclude alongside :includes throws"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))]
+      (try
+        (is (thrown-with-msg?
+             clojure.lang.ExceptionInfo #"mutually exclusive"
+             (api/clone! {:conn     {:p4/port "h:1666"}
+                          :source   "//stream/main"
+                          :target   target
+                          :exclude  (clj-p4.excludes/compile-patterns ["*.bin"])
+                          :includes ["*.psd"]})))
         (finally (rm-rf d))))))
 
 (deftest source-ref-override-test
