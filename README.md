@@ -167,12 +167,14 @@ A built-in `binaries.edn` ships nine generic categories. Pass `:all` or a subset
 | `:images` | `*.png` `*.jpg` `*.psd` `*.exr` … |
 | `:audio` | `*.wav` `*.mp3` `*.ogg` `*.flac` … |
 | `:video` | `*.mp4` `*.mov` `*.mkv` `*.bik` … |
-| `:models` | `*.fbx` `*.obj` `*.blend` `*.gltf` … |
+| `:models` | `*.fbx` `*.blend` `*.glb` `*.abc` … |
 | `:archives` | `*.zip` `*.tar` `*.7z` `*.pak` … |
 | `:fonts` | `*.ttf` `*.otf` `*.woff` … |
 | `:documents` | `*.pdf` `*.doc` `*.xlsx` … |
 | `:compiled` | `*.dll` `*.so` `*.exe` `*.jar` … |
-| `:engine-assets` | `*.uasset` `*.umap` `*.unity` `*.prefab` … |
+| `:engine-assets` | `*.uasset` `*.umap` `*.upk` `*.ubulk` … (Unreal cooked content) |
+
+The curated list is deliberately conservative: an extension only appears here if it is *always* a binary container, regardless of variant. Source-form text and config — `.svg` (XML), `.gltf` (JSON), `.dae` (COLLADA), `.obj` (Wavefront text), Unity scene/prefab/asset YAML, Unreal `.upluginmanifest` — is intentionally omitted. Type-based filtering catches their binary cousins (`*.glb`, etc.) automatically; their text cousins are code, not assets, and usually belong in git alongside the source.
 
 For finer control, drop down to `clj-p4.excludes/exclude-patterns` directly: `:extra-excludes` adds patterns, `:includes` removes them, and `:resource` lets you swap in your own category map entirely. Compile the result with `clj-p4.excludes/compile-patterns` and pass it as `:exclude` (mutually exclusive with `:exclude-categories`).
 

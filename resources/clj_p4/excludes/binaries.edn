@@ -7,10 +7,18 @@
 ;; This list is opt-in via `:exclude-categories` on `clone!` / `fetch!`.
 ;; The orthogonal `:exclude-binaries?` option (default true) drops anything
 ;; Perforce itself classifies as binary, regardless of extension.
+;;
+;; Curation principle: only include extensions that are *always* a binary
+;; container, regardless of variant. Source-form text/config (e.g. `.svg`
+;; XML, `.gltf` JSON, `.dae` COLLADA, `.obj` Wavefront text, Unity YAML
+;; scenes/prefabs/assets, Unreal `.upluginmanifest` JSON) is intentionally
+;; absent — those are code, not assets, and users importing source for
+;; review usually want them in git. Type-based filtering (`:rev/type :binary`)
+;; catches their binary cousins like `.glb` automatically.
 
 {:images
  ["*.png" "*.jpg" "*.jpeg" "*.tga" "*.bmp" "*.tiff" "*.exr" "*.hdr"
-  "*.psd" "*.dds" "*.ico" "*.gif" "*.svg" "*.webp"]
+  "*.psd" "*.dds" "*.ico" "*.gif" "*.webp"]
 
  :audio
  ["*.wav" "*.mp3" "*.ogg" "*.flac" "*.aiff" "*.wma" "*.aac" "*.opus"
@@ -20,8 +28,10 @@
  ["*.mp4" "*.avi" "*.mov" "*.mkv" "*.wmv" "*.bik" "*.webm"]
 
  :models
- ["*.fbx" "*.obj" "*.blend" "*.max" "*.ma" "*.mb" "*.dae" "*.3ds"
-  "*.stl" "*.ply" "*.abc" "*.gltf" "*.glb"]
+ ;; Always-binary 3D model containers. `.obj`/`.dae`/`.gltf`/`.ply`/`.stl`
+ ;; have text variants and are deliberately excluded; their binary cousin
+ ;; `.glb` (binary glTF) is included.
+ ["*.fbx" "*.blend" "*.max" "*.ma" "*.mb" "*.3ds" "*.abc" "*.glb"]
 
  :archives
  ["*.pak" "*.zip" "*.tar" "*.gz" "*.7z" "*.rar"]
@@ -37,7 +47,8 @@
   "*.exp" "*.jar" "*.war" "*.class" "*.pyc" "*.pyo" "*.whl"]
 
  :engine-assets
- ;; Unreal: *.uasset *.umap *.upk *.udk *.ubulk *.uexp *.upluginmanifest
- ;; Unity:  *.unity *.prefab *.asset *.anim *.controller
- ["*.uasset" "*.umap" "*.upk" "*.udk" "*.ubulk" "*.uexp" "*.upluginmanifest"
-  "*.unity" "*.prefab" "*.asset" "*.anim" "*.controller"]}
+ ;; Unreal cooked binary content only. Unity scene/prefab/asset YAML
+ ;; (`.unity`, `.prefab`, `.asset`, `.anim`, `.controller`) and Unreal
+ ;; `.upluginmanifest` (JSON config) are deliberately omitted — they're
+ ;; text and typically version-controlled alongside code.
+ ["*.uasset" "*.umap" "*.upk" "*.udk" "*.ubulk" "*.uexp"]}

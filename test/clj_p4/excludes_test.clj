@@ -96,7 +96,7 @@
   (testing ":categories with a subset selects from the built-in resource"
     (let [out (ex/exclude-patterns {:categories #{:images}})]
       (is (some #{"*.png"} out))
-      (is (some #{"*.svg"} out))
+      (is (some #{"*.psd"} out))
       (is (not (some #{"*.wav"} out)))
       (is (not (some #{"*.exe"} out)))))
 
@@ -107,11 +107,20 @@
       (is (some #{"*.uasset"} out))  ; engine-assets
       (is (some #{"*.dll"} out))))   ; compiled
 
+  (testing "text-form formats are deliberately absent from the curated list"
+    (let [out (ex/exclude-patterns {:categories :all})]
+      (is (not (some #{"*.svg"} out)))     ; XML
+      (is (not (some #{"*.gltf"} out)))    ; JSON
+      (is (not (some #{"*.dae"} out)))     ; COLLADA XML
+      (is (not (some #{"*.obj"} out)))     ; text Wavefront
+      (is (not (some #{"*.unity"} out)))   ; Unity YAML
+      (is (not (some #{"*.prefab"} out))))) ; Unity YAML
+
   (testing ":categories with :includes narrows the union"
     (let [out (ex/exclude-patterns {:categories #{:images}
-                                    :includes ["*.svg"]})]
-      (is (some #{"*.png"} out))
-      (is (not (some #{"*.svg"} out)))))
+                                    :includes ["*.png"]})]
+      (is (some #{"*.psd"} out))
+      (is (not (some #{"*.png"} out)))))
 
   (testing ":categories with :extra-excludes appends after built-ins"
     (let [out (ex/exclude-patterns {:categories #{:images}

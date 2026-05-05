@@ -39,9 +39,13 @@ type so unknown extensions are caught for free.
   for selecting from clj-p4's built-in resource (or from a
   user-supplied `:resource` map, which still takes precedence).
 - `resources/clj_p4/excludes/binaries.edn` — nine generic categories
-  totalling ~90 patterns, lifted from Noumenon's curated list with
-  engine-specific groups (Unreal + Unity) merged into a single
-  `:engine-assets` bucket.
+  totalling ~77 patterns. Curation principle: an extension only
+  appears here if it is *always* a binary container, regardless of
+  variant. Source-form text and config (`.svg` XML, `.gltf` JSON,
+  `.dae` COLLADA, `.obj` text Wavefront, Unity scene/prefab/asset
+  YAML, Unreal `.upluginmanifest` JSON) is intentionally omitted —
+  those are code, not assets, and the type filter catches their
+  binary cousins (`.glb`, etc.) automatically.
 
 ### Changed
 
