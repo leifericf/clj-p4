@@ -1,0 +1,43 @@
+;; Built-in categorized binary exclude patterns for clj-p4.
+;; Loaded by `clj-p4.excludes` and selected via the `:categories` option.
+;;
+;; Patterns are gitignore-flavoured; see `clj-p4.excludes/pattern->re` for
+;; the supported syntax. Each value is a vector of pattern strings.
+;;
+;; This list is opt-in via `:exclude-categories` on `clone!` / `fetch!`.
+;; The orthogonal `:exclude-binaries?` option (default true) drops anything
+;; Perforce itself classifies as binary, regardless of extension.
+
+{:images
+ ["*.png" "*.jpg" "*.jpeg" "*.tga" "*.bmp" "*.tiff" "*.exr" "*.hdr"
+  "*.psd" "*.dds" "*.ico" "*.gif" "*.svg" "*.webp"]
+
+ :audio
+ ["*.wav" "*.mp3" "*.ogg" "*.flac" "*.aiff" "*.wma" "*.aac" "*.opus"
+  "*.mid"]
+
+ :video
+ ["*.mp4" "*.avi" "*.mov" "*.mkv" "*.wmv" "*.bik" "*.webm"]
+
+ :models
+ ["*.fbx" "*.obj" "*.blend" "*.max" "*.ma" "*.mb" "*.dae" "*.3ds"
+  "*.stl" "*.ply" "*.abc" "*.gltf" "*.glb"]
+
+ :archives
+ ["*.pak" "*.zip" "*.tar" "*.gz" "*.7z" "*.rar"]
+
+ :fonts
+ ["*.ttf" "*.otf" "*.woff" "*.woff2" "*.eot"]
+
+ :documents
+ ["*.pdf" "*.doc" "*.docx" "*.xls" "*.xlsx" "*.ppt" "*.pptx"]
+
+ :compiled
+ ["*.dll" "*.so" "*.dylib" "*.exe" "*.lib" "*.a" "*.o" "*.pdb" "*.ilk"
+  "*.exp" "*.jar" "*.war" "*.class" "*.pyc" "*.pyo" "*.whl"]
+
+ :engine-assets
+ ;; Unreal: *.uasset *.umap *.upk *.udk *.ubulk *.uexp *.upluginmanifest
+ ;; Unity:  *.unity *.prefab *.asset *.anim *.controller
+ ["*.uasset" "*.umap" "*.upk" "*.udk" "*.ubulk" "*.uexp" "*.upluginmanifest"
+  "*.unity" "*.prefab" "*.asset" "*.anim" "*.controller"]}
