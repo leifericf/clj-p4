@@ -333,6 +333,31 @@
   [{:keys [conn source chain] :as ctx}]
   (do-clone! ctx conn (str source "/...") chain nil))
 
+(defn- assert-no-colliding-refs!
+  "Throw if two distinct entries of `sources` resolve to the same git ref
+   under the combination of `source->ref` overrides and the
+   `default-ref-of-source` derivation. The `:source->ref` override is
+   considered first; otherwise the basename-derived default applies. A
+   user can disambiguate any collision by supplying `:source->ref` for at
+   least one of the colliding sources."
+  [op-name sources source->ref ref-fn]
+  (when sources
+    (let [resolved   (mapv (fn [s] [s (or (get source->ref s) (ref-fn s))])
+                           sources)
+          collisions (->> resolved
+                          (group-by second)
+                          (keep (fn [[ref entries]]
+                                  (when (> (count entries) 1)
+                                    {:ref     ref
+                                     :sources (mapv first entries)}))))]
+      (when (seq collisions)
+        (throw (ex-info
+                (str op-name " :sources resolve to colliding ref(s): "
+                     (pr-str (mapv :ref collisions))
+                     " — pass :source->ref to disambiguate")
+                {:clj-p4/error :colliding-source-refs
+                 :collisions   (vec collisions)}))))))
+
 (defn- default-ref-of-source
   "Stream basename → `refs/heads/<basename>`. `//stream/main` →
    `refs/heads/main`; `//depot/legacy/src/...` → `refs/heads/src`."
@@ -471,6 +496,7 @@
                       {:clj-p4/error :duplicate-sources
                        :sources      sources
                        :duplicates   dups}))))
+  (assert-no-colliding-refs! "clone!" sources source->ref default-ref-of-source)
   (assert-target-empty! target)
   (let [exclude' (resolve-exclude args)
         base (-> args
@@ -635,6 +661,7 @@
                       {:clj-p4/error :duplicate-sources
                        :sources      sources
                        :duplicates   dups}))))
+  (assert-no-colliding-refs! "fetch!" sources source->ref default-ref-of-source)
   (let [exclude' (resolve-exclude args)
         base (-> args
                  (dissoc :source :sources :source->ref :ref :exclude-categories)

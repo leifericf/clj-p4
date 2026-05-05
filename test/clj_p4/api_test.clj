@@ -936,6 +936,44 @@
           (is (= :duplicate-sources (:clj-p4/error (ex-data e))))
           (is (= #{"//s/a" "//s/b"} (set (:duplicates (ex-data e))))))
         (finally (rm-rf d)))))
+  (testing "passing :sources whose default refs collide throws"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))]
+      (try
+        ;; Both basenames are 'main' → both default to refs/heads/main.
+        (let [e (try (api/clone! {:conn    {:p4/port "h:1666"}
+                                  :target  target
+                                  :sources ["//d/main" "//e/main"]})
+                     :no-throw
+                     (catch clojure.lang.ExceptionInfo e e))]
+          (is (instance? clojure.lang.ExceptionInfo e))
+          (is (= :colliding-source-refs (:clj-p4/error (ex-data e))))
+          (let [colls (:collisions (ex-data e))]
+            (is (= ["refs/heads/main"] (mapv :ref colls)))
+            (is (= #{"//d/main" "//e/main"}
+                   (set (mapcat :sources colls))))))
+        ;; Same shape, but :source->ref disambiguates one — collision check
+        ;; should pass. P4 will then fail with :proc-failed (no real server).
+        (let [e (try (api/clone! {:conn        {:p4/port "h:1666"}
+                                  :target      target
+                                  :sources     ["//d/main" "//e/main"]
+                                  :source->ref {"//e/main" "refs/heads/e-main"}})
+                     :no-throw
+                     (catch clojure.lang.ExceptionInfo e e))]
+          (is (instance? clojure.lang.ExceptionInfo e))
+          (is (not= :colliding-source-refs (:clj-p4/error (ex-data e))))
+          (is (= :proc-failed (:clj-p4/error (ex-data e)))))
+        ;; Override that maps two sources to the same ref still collides.
+        (let [e (try (api/clone! {:conn        {:p4/port "h:1666"}
+                                  :target      target
+                                  :sources     ["//s/foo" "//s/bar"]
+                                  :source->ref {"//s/foo" "refs/heads/x"
+                                                "//s/bar" "refs/heads/x"}})
+                     :no-throw
+                     (catch clojure.lang.ExceptionInfo e e))]
+          (is (instance? clojure.lang.ExceptionInfo e))
+          (is (= :colliding-source-refs (:clj-p4/error (ex-data e)))))
+        (finally (rm-rf d)))))
   (testing "passing :sources [] throws — empty collection is not a source"
     (let [d (tmp-dir)
           target (str (io/file d "repo"))]

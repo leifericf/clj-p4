@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- `clone!` / `fetch!` reject `:sources` whose entries resolve to the
+  same git ref. Two sources with the same basename (e.g.
+  `["//d/main" "//e/main"]`) both default to `refs/heads/main` and the
+  second `clone-one!` would silently clobber the first. Now raises
+  `:clj-p4/error :colliding-source-refs` with the offending ref(s) and a
+  hint to disambiguate via `:source->ref`. Explicit `:source->ref` entries
+  participate in the check, so two sources mapped to the same ref still
+  collide.
 - `clone!` / `fetch!` reject `:sources` containing duplicate entries
   with `:clj-p4/error :duplicate-sources`. Previously a duplicated source
   ran `clone-one!` / `fetch-one!` twice on the same source into the same
