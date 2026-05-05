@@ -201,7 +201,7 @@
    [:target file-coercible]
    [:ref {:optional true} string?]
    [:source {:optional true} string?]
-   [:sources {:optional true} [:vector string?]]
+   [:sources {:optional true} [:sequential string?]]
    [:source->ref {:optional true} [:map-of string? string?]]
    [:max-changes {:optional true} pos-int?]
    [:exclude {:optional true} vector?]

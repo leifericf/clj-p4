@@ -33,6 +33,10 @@
 
 ### Fixed
 
+- `clone!` / `sync!` `:sources` accepts any sequential collection of
+  strings, not only literal vectors — restores compatibility with the
+  common idiom of building sources via `(map …)` / `(filter …)` /
+  `(for …)`, whose results are lazy seqs.
 - `clone!` / `sync!` boundary accepts any file-coercible `:target` —
   string, `java.io.File`, `java.nio.file.Path`, `java.net.URI`,
   `java.net.URL`, etc. — matching what the implementation already did

@@ -147,6 +147,23 @@
 
 ;; ---------------- Public API options ----------------
 
+(deftest sources-accepts-any-sequential-test
+  (testing "vector of source strings validates"
+    (is (m/validate s/clone-options
+                    {:conn    {:p4/port "h:1666"}
+                     :target  "/tmp/r"
+                     :sources ["//s/a" "//s/b"]})))
+  (testing "lazy seq of source strings validates (output of map/filter/for)"
+    (is (m/validate s/clone-options
+                    {:conn    {:p4/port "h:1666"}
+                     :target  "/tmp/r"
+                     :sources (map identity ["//s/a" "//s/b"])})))
+  (testing "non-string elements still rejected"
+    (is (not (m/validate s/clone-options
+                         {:conn    {:p4/port "h:1666"}
+                          :target  "/tmp/r"
+                          :sources ["//s/a" 42]})))))
+
 (deftest target-accepts-coercible-types-test
   (testing "string target validates"
     (is (m/validate s/clone-options
