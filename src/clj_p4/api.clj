@@ -4,7 +4,8 @@
    Each takes the data it needs explicitly — no opts god-map. Side effects
    delegated to `clj-p4.io.*`; orchestration delegated to
    `clj-p4.runner`."
-  (:require [clj-p4.io.git :as git]
+  (:require [clj-p4.excludes :as excludes]
+            [clj-p4.io.git :as git]
             [clj-p4.io.p4 :as p4]
             [clj-p4.io.subprocess :as proc]
             [clj-p4.marshal :as marshal]
@@ -31,6 +32,25 @@
                        :op           op-name
                        :explanation  explanation
                        :args         args})))))
+
+(defn- resolve-exclude
+  "Resolve the compiled `:exclude` vector for `clone!` / `fetch!` from
+   `:exclude` (already-compiled patterns) and/or `:exclude-categories`
+   (selection from clj-p4's built-in `binaries.edn`). Throws if both are
+   set — the user should pick one source of patterns to keep ordering
+   and override semantics unambiguous. Returns nil when neither is set."
+  [{:keys [exclude exclude-categories]}]
+  (when (and exclude exclude-categories)
+    (throw (ex-info
+            ":exclude and :exclude-categories are mutually exclusive — pass one or the other"
+            {:clj-p4/error       :exclude-and-categories-set
+             :exclude            exclude
+             :exclude-categories exclude-categories})))
+  (cond
+    exclude            exclude
+    exclude-categories (-> {:categories exclude-categories}
+                           excludes/exclude-patterns
+                           excludes/compile-patterns)))
 
 (defn available?
   "True if `p4` is on PATH and answers `p4 -V`. Cheap and offline."
@@ -208,13 +228,18 @@
         (throw e)))))
 
 (defn- build-options
-  "Plan-options map shared by every clone and fetch helper. Keys are
-   only included when truthy on the source ctx, so a clone that didn't
-   pass `:user-map` produces an options map without that key — keeps
-   the plan EDN-printable without nil-valued keys."
+  "Plan-options map shared by every clone and fetch helper. Optional
+   keys are only included when truthy on the source ctx, keeping the
+   plan EDN-printable without nil-valued keys. `:exclude-binaries?` is
+   always included because its default (true) is load-bearing — the
+   runner reads it as a tri-state (true / explicitly-false / absent)
+   and we want absence to be impossible."
   [{:keys [max-changes fetch-parallelism max-print-bytes user-map
-           emit-labels? lookahead no-merge? keep-empty-commits?]}]
-  (cond-> {:checkpoint-every 1000}
+           emit-labels? lookahead no-merge? keep-empty-commits?
+           exclude-binaries?]
+    :or   {exclude-binaries? true}}]
+  (cond-> {:checkpoint-every  1000
+           :exclude-binaries? exclude-binaries?}
     max-changes         (assoc :max-changes max-changes)
     fetch-parallelism   (assoc :fetch-parallelism fetch-parallelism)
     max-print-bytes     (assoc :max-print-bytes max-print-bytes)
@@ -353,7 +378,20 @@
                         `refs/heads/main`)
      :source->ref       per-source ref override (multi-source only)
      :max-changes       cap on changelists imported
-     :exclude           compiled exclude patterns (vector of `[pat re]`)
+     :exclude-binaries? drop revisions P4 itself classifies as binary
+                        (`:rev/type` ∈ `:binary` / `:apple` / `:resource`).
+                        Defaults to true — clj-p4 has no Git LFS support
+                        and Git handles binaries badly. Set to false to
+                        import every revision regardless of type.
+     :exclude-categories `:all` or a set of category keywords (e.g.
+                        `#{:images :audio}`) selecting from clj-p4's
+                        built-in `binaries.edn`. Mutually exclusive with
+                        `:exclude`. Composes with `:exclude-binaries?`.
+     :exclude           pre-compiled exclude patterns (vector of
+                        `[pat re]`, output of
+                        `clj-p4.excludes/compile-patterns`). For
+                        category-based selection, prefer
+                        `:exclude-categories`.
      :fetch-parallelism N parallel `p4 print` calls per changelist (1 = sequential)
      :max-print-bytes   cap on per-file `p4 print` size; throws above
      :lookahead         N upcoming changelists to `p4 describe` in parallel
@@ -391,9 +429,11 @@
     (throw (ex-info "clone! needs :source or :sources"
                     {:clj-p4/error :no-source})))
   (assert-target-empty! target)
-  (let [base (-> args
-                 (dissoc :source :sources :source->ref :ref)
-                 (assoc :progress-fn progress-fn :stop? stop?))
+  (let [exclude' (resolve-exclude args)
+        base (-> args
+                 (dissoc :source :sources :source->ref :ref :exclude-categories)
+                 (assoc :progress-fn progress-fn :stop? stop?
+                        :exclude exclude'))
         decoder (marshal/metadata-decoder
                  (or (:metadata-decoding-strategy args) :strict)
                  (:metadata-fallback-encoding args))]
@@ -546,9 +586,11 @@
   (when-not (or source sources)
     (throw (ex-info "fetch! needs :source or :sources"
                     {:clj-p4/error :no-source})))
-  (let [base (-> args
-                 (dissoc :source :sources :source->ref :ref)
-                 (assoc :progress-fn progress-fn :stop? stop?))
+  (let [exclude' (resolve-exclude args)
+        base (-> args
+                 (dissoc :source :sources :source->ref :ref :exclude-categories)
+                 (assoc :progress-fn progress-fn :stop? stop?
+                        :exclude exclude'))
         decoder (marshal/metadata-decoder
                  (or (:metadata-decoding-strategy args) :strict)
                  (:metadata-fallback-encoding args))]
