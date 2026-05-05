@@ -93,14 +93,39 @@
         (when-not (excluded-by-policy? excludes unescaped)
           unescaped)))))
 
+(defn- strip-trailing-newline
+  "Return `bs` minus one trailing `\\n` byte (and an optional preceding
+   `\\r` for CRLF), or the array unchanged if it has no trailing newline.
+   Used only for symlink blobs: p4 stores the link target with a newline
+   appended, but git's symlink convention is for the blob content to be
+   exactly the target path with no terminator."
+  ^bytes [^bytes bs]
+  (let [n (alength bs)]
+    (cond
+      (and (>= n 2) (= (aget bs (- n 1)) (byte \newline))
+                    (= (aget bs (- n 2)) (byte \return)))
+      (java.util.Arrays/copyOf bs (- n 2))
+
+      (and (pos? n) (= (aget bs (- n 1)) (byte \newline)))
+      (java.util.Arrays/copyOf bs (- n 1))
+
+      :else bs)))
+
 (defn- fetch-blob-bytes!
   "Run `p4 print` for one file and return the bytes. Honours
-   `:max-print-bytes` cap; throws ex-info if exceeded."
+   `:max-print-bytes` cap; throws ex-info if exceeded.
+
+   Symlink revs get a trailing-newline strip: p4 ships the link target
+   with a `\\n` terminator that must not survive into git, since git
+   stores the literal target path as the blob content."
   [{:keys [conn max-print-bytes]} change fr]
   (let [baos (ByteArrayOutputStream.)]
     (p4/print-bytes! conn (str (:rev/depot fr) "@" change) baos
                      :keyword-expand? (keyword-expand? fr))
-    (let [bs (.toByteArray baos)]
+    (let [raw (.toByteArray baos)
+          bs  (if (= :symlink (:rev/type fr))
+                (strip-trailing-newline raw)
+                raw)]
       (when (and max-print-bytes (> (alength bs) (long max-print-bytes)))
         (throw (ex-info (str "p4 print exceeded :max-print-bytes ("
                              max-print-bytes ")")
