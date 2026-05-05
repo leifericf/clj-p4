@@ -391,10 +391,11 @@
         (assoc ctx :checkpointed-at (:op/last-change op)))))
 
 (defn- initial-ctx
-  [plan {:keys [git-handle conn ref]}]
+  [plan {:keys [git-handle conn ref already-imported]}]
   (let [opts      (:plan/options plan)
         lookahead (:lookahead opts)
         new-set   (set (:plan/changelists plan))
+        prior-set (or already-imported #{})
         since     (when (= :sync (:plan/kind plan))
                     (:plan/since-change plan))]
     {:plan              plan
@@ -413,7 +414,12 @@
      :describes         (when (and lookahead (pos? lookahead)) (atom {}))
      :no-merge?         (boolean (:no-merge? opts))
      :keep-empty-commits? (boolean (:keep-empty-commits? opts))
+     ;; Imported = (this source's CLs) ∪ (CLs ≤ since on sync) ∪
+     ;; (CLs already emitted by a prior clone-one! sharing this marks
+     ;; file). The prior set is what makes cross-source merge-parent
+     ;; detection work for multi-source clones.
      :imported?         (fn [c] (or (contains? new-set c)
+                                    (contains? prior-set c)
                                     (and since (some-> c (<= since)))))
      :last-change       since}))
 
@@ -466,10 +472,11 @@
    When `:emit-labels?` is true on `(:plan/options plan)`, walks
    `p4 labels` after the main import and emits annotated git tags for
    any label whose `Revision:` resolves to an imported changelist."
-  [plan {:keys [git-handle conn ref progress-fn stop?]
+  [plan {:keys [git-handle conn ref progress-fn stop? already-imported]
          :or   {progress-fn (fn [_]) stop? (constantly false)}}]
   (let [opts  (:plan/options plan)
-        ctx0  (initial-ctx plan {:git-handle git-handle :conn conn :ref ref})
+        ctx0  (initial-ctx plan {:git-handle git-handle :conn conn :ref ref
+                                 :already-imported already-imported})
         final (try
                 (transduce
                  (comp (take-while (fn [_] (not (stop?))))

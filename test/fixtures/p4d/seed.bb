@@ -305,19 +305,67 @@ Paths:
   (ali-shell "add" (str ali-rt "/src/alices_change.txt"))
   (ali-shell "submit" "-d" "t9828: alice's change"))
 
+;; --- merge-detection: classic depot with two branches + a real
+;;     `p4 integrate`. Stream-flow rules don't apply to classic depots,
+;;     so the integrate is a vanilla open + resolve + submit. clj-p4's
+;;     `merge-source-for-cl` walks the resulting integration records and
+;;     produces a 2-parent commit when both branches are cloned together.
+(p4-stdin! "Depot: classic_depot\nType: local\nMap: classic_depot/...\n"
+           "depot" "-i")
+
+(let [cls-ws "clj_p4_seed_classic"
+      cls-rt "/p4/ws_classic"
+      pcl!   (fn [& args] (apply p4! "-c" cls-ws args))]
+  (fs/create-dirs cls-rt)
+  (p4-stdin! (str "Client: " cls-ws "\n"
+                  "Owner: admin\n"
+                  "Root: " cls-rt "\n"
+                  "Options: noallwrite noclobber nocompress unlocked nomodtime normdir\n"
+                  "LineEnd: local\n"
+                  "View:\n"
+                  "\t//classic_depot/... //" cls-ws "/...\n")
+             "client" "-i")
+  ;; (1) main: initial submit.
+  (write-text! (str cls-rt "/branches/main/file.txt") "version 1 on main\n")
+  (pcl! "add" (str cls-rt "/branches/main/file.txt"))
+  (pcl! "submit" "-d" "merge-detect: main initial")
+  ;; (2) Branch main → feature via integrate; a vanilla `p4 integrate`
+  ;; on a classic depot opens the target files for `branch`.
+  (pcl! "integrate"
+        "//classic_depot/branches/main/..."
+        "//classic_depot/branches/feature/...")
+  (pcl! "submit" "-d" "merge-detect: branch feature off main")
+  ;; (3) feature: a real change.
+  (pcl! "edit" (str cls-rt "/branches/feature/file.txt"))
+  (write-text! (str cls-rt "/branches/feature/file.txt")
+               "version 2 on feature\n")
+  (pcl! "submit" "-d" "merge-detect: feature change")
+  ;; (4) merge feature → main with `-ay` so we just record the
+  ;; integration record without conflict resolution work.
+  (pcl! "integrate"
+        "//classic_depot/branches/feature/..."
+        "//classic_depot/branches/main/...")
+  (pcl! "resolve" "-ay")
+  (pcl! "submit" "-d" "merge-detect: merge feature into main"))
+
 ;; --- t9811 label import: a label spec applied at a specific CL ------------
-;; The clj-p4 caller passes `:emit-labels? true` and the importer should
-;; emit a git tag whose name matches the label and whose commit is the
-;; one corresponding to the label's `Revision: @<CL>`.
-(let [head-cl (-> (apply proc/shell {:out :string :err :string :continue true}
-                         "p4" (concat conn-args ["counter" "change"]))
-                  :out
-                  clojure.string/trim)]
+;; Pin the label to the head CL on //stream/main specifically, NOT the
+;; server-wide `p4 counter change` (which by this point in the seed has
+;; advanced past //stream/main into //classic_depot for the merge-detect
+;; fixture above). The clj-p4 caller passes `:emit-labels? true` when
+;; cloning //stream/main and the importer should emit a git tag at the
+;; commit corresponding to the label's @CL.
+(let [{:keys [out]} (apply proc/shell {:out :string :err :string :continue true}
+                           "p4" (concat conn-args
+                                        ["changes" "-m" "1"
+                                         "//stream/main/..."]))
+      head-main (when-let [[_ n] (re-find #"Change (\d+)" (str out))]
+                  n)]
   (p4-stdin! (str "Label: t9811_release_1\n"
                   "Owner: admin\n"
                   "Description:\n\trelease label for the t9811 fixture\n"
                   "Options: unlocked\n"
-                  "Revision: @" head-cl "\n")
+                  "Revision: @" head-main "\n")
              "label" "-i"))
 
 ;; --- t9818 block-mode user + group ----------------------------------------

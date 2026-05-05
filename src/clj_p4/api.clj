@@ -110,20 +110,41 @@
       (clone? target)                         :clj-p4-clone
       :else                                   :not-empty)))
 
+(defn- read-marks-cls
+  "Parse the fast-import marks file at `path` (if present) and return a
+   set of mark numbers — the changelist numbers of every commit emitted
+   by previous clone-one!/sync-one! invocations sharing this target.
+
+   Used to seed cross-source merge-parent detection: when source A is
+   imported and then source B is, source B's import sees A's CLs as
+   `imported?` so an integrate from A → B emits a 2-parent commit."
+  [^String path]
+  (let [f (io/file path)]
+    (if-not (.exists f)
+      #{}
+      (with-open [rdr (io/reader f)]
+        (->> (line-seq rdr)
+             (keep (fn [line]
+                     (when-let [[_ n] (re-find #"^:(\d+)\s" line)]
+                       (parse-long n))))
+             (into #{}))))))
+
 (defn- run-fast-import!
   "Open a `git fast-import` handle, run `execute/execute!` over `plan-val`
    with the given fetch `conn`, and close the handle. Returns the final
    ctx (`:last-change`, etc.). Always closes the handle, even on failure."
   [plan-val target conn ref progress-fn stop?]
   (let [marks-file (str (io/file target "clj-p4.marks"))
+        already    (read-marks-cls marks-file)
         handle     (git/fast-import-start target {:marks-file marks-file})]
     (try
       (let [final (execute/execute! plan-val
-                                    {:git-handle  handle
-                                     :conn        conn
-                                     :ref         ref
-                                     :progress-fn progress-fn
-                                     :stop?       stop?})
+                                    {:git-handle       handle
+                                     :conn             conn
+                                     :ref              ref
+                                     :progress-fn      progress-fn
+                                     :stop?            stop?
+                                     :already-imported already})
             {:keys [exit stderr]} (git/fast-import-close! handle)]
         (when-not (zero? exit)
           (throw (ex-info (str "git fast-import exited " exit)

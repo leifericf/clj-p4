@@ -265,25 +265,41 @@
       first
       ps/parse-describe))
 
+(defn- parse-rev
+  "Parse a Perforce rev value (e.g. `\"#2\"`, `\"2\"`, `\"#none\"`, `nil`)
+   into a long, or nil. `p4 integrated` returns rev fields with a leading
+   `#` in `-ztag` mode."
+  [s]
+  (when (and s (string? s))
+    (when-let [[_ digits] (re-find #"^#?(\d+)" s)]
+      (parse-long digits))))
+
 (defn integrated
-  "`p4 integrated -F \"change=<change>\" <to-file>` → seq of integration
-   records done in `change` against `to-file`. Each row carries
+  "`p4 integrated <to-file>` → seq of integration records for `to-file`,
+   filtered client-side to those happening on `change`. Each row carries
    `:integ/from-file`, `:integ/end-from-rev`, `:integ/how`,
    `:integ/change`. Used by merge-parent detection: the executor
    resolves each `:rev/action :integrate` file to its source-file +
-   end-rev here, then asks `fstat` which change produced that rev."
+   end-rev here, then asks `fstat` which change produced that rev.
+
+   `-F change=N` is *not* valid on `p4 integrated` (only on `fstat` /
+   `sizes`); the integration record stream from this command isn't
+   server-filterable, so we fetch everything for `to-file` and filter
+   in clojure."
   [conn change to-file & {:keys [mode] :or {mode :G}}]
-  (let [args ["integrated" "-F" (str "change=" change) to-file]
+  (let [args ["integrated" to-file]
         recs (->> (run-p4! conn (with-mode-flag mode) args)
                   (decode mode))]
-    (mapv (fn [r]
-            {:integ/to-file        (get r "toFile")
-             :integ/from-file      (get r "fromFile")
-             :integ/start-from-rev (some-> (get r "startFromRev") parse-long)
-             :integ/end-from-rev   (some-> (get r "endFromRev") parse-long)
-             :integ/how            (get r "how")
-             :integ/change         (some-> (get r "change") parse-long)})
-          recs)))
+    (->> recs
+         (mapv (fn [r]
+                 {:integ/to-file        (get r "toFile")
+                  :integ/from-file      (get r "fromFile")
+                  :integ/start-from-rev (parse-rev (get r "startFromRev"))
+                  :integ/end-from-rev   (parse-rev (get r "endFromRev"))
+                  :integ/how            (get r "how")
+                  :integ/change         (some-> (get r "change")
+                                                parse-long)}))
+         (filterv #(= change (:integ/change %))))))
 
 (defn fstat
   "`p4 fstat <depot-rev>` → first record's head fields. For an integration
