@@ -11,9 +11,18 @@
   (:import (java.io OutputStream)))
 
 (defn init-bare!
-  "Create a new bare git repo at `target-dir`. Returns the path."
+  "Create a new bare git repo at `target-dir`. Returns the path.
+
+   Forces `core.ignorecase=false`: git auto-detects the host filesystem's
+   case sensitivity at init time and on macOS/APFS sets ignorecase=true
+   by default, which causes `fast-import` to merge case-only sibling
+   files (e.g. `case.txt` and `Case.txt`) into a single tree entry.
+   That's correct for working-tree workflows but wrong for our import,
+   which is byte-faithful to the depot regardless of where it runs."
   [target-dir]
   (proc/run-checked! ["git" "init" "--bare" (str target-dir)])
+  (proc/run-checked! ["git" "-C" (str target-dir)
+                      "config" "core.ignorecase" "false"])
   (str target-dir))
 
 (defn fast-import-start
