@@ -43,4 +43,22 @@
       (is (= "120000" (get-in tree ["src/link" :mode])))
       (is (= "hello.txt"
              (ga/cat-blob-string target "refs/heads/main" "src/link"))
-          "symlink content must be the original target, no rewrite"))))
+          "symlink content must be the original target, no rewrite"))
+    (testing "CRLF text file preserves carriage-return bytes verbatim"
+      ;; Plain `text` type — clj-p4 does no implicit EOL normalisation,
+      ;; mirroring upstream git-p4's contract.
+      (when (contains? tree "src/crlf.txt")
+        (is (= "100644" (get-in tree ["src/crlf.txt" :mode])))
+        (is (= "line one\r\nline two\r\n"
+               (ga/cat-blob-string target "refs/heads/main" "src/crlf.txt")))))
+    (testing "UTF-16 file with BOM lands as a regular blob with the
+              transcoded text intact"
+      ;; The unicode-mode p4d (-xi) transcodes utf16-typed files to the
+      ;; client charset on read — same contract upstream git-p4
+      ;; verifies via `test_cmp` against the workspace copy. With
+      ;; `:p4/charset :utf8` the imported blob is the UTF-8 form.
+      (when (get tree "src/utf16-with-bom.txt")
+        (is (= "100644" (get-in tree ["src/utf16-with-bom.txt" :mode])))
+        (is (= "utf16 BOM\n"
+               (ga/cat-blob-string target "refs/heads/main"
+                                   "src/utf16-with-bom.txt")))))))

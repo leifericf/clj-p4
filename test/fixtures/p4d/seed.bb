@@ -172,6 +172,21 @@ Paths:
 (pp-soft! "add" "-t" "utf16" (str wroot "/src/utf16-no-bom.txt"))
 (pp-soft! "submit" "-d" "t9825: utf16 without BOM")
 
+;; --- t9802 UTF-16 with BOM + CRLF text (extends filetype coverage) -------
+;; Paired with the no-BOM utf16 above so the t9802 test exercises both
+;; ends of the UTF-16-byte-passthrough contract. The CRLF file uses the
+;; default `text` type — clj-p4 must preserve CRLF byte-for-byte (no
+;; implicit eol normalisation, matching upstream's contract for plain
+;; text without `.gitattributes eol=` rules).
+(write-bytes! (str wroot "/src/utf16-with-bom.txt")
+              (byte-array (concat [(unchecked-byte 0xff) (unchecked-byte 0xfe)]
+                                  (.getBytes "utf16 BOM\n" "UTF-16LE"))))
+(pp-soft! "add" "-t" "utf16" (str wroot "/src/utf16-with-bom.txt"))
+(write-bytes! (str wroot "/src/crlf.txt")
+              (.getBytes "line one\r\nline two\r\n" "UTF-8"))
+(pp! "add" "-t" "text" (str wroot "/src/crlf.txt"))
+(pp-soft! "submit" "-d" "t9802: utf16+BOM and CRLF preservation")
+
 ;; --- change 6: t9814 rename pair (move/add + move/delete) -----------------
 (pp! "edit" (str wroot "/src/hello.txt"))
 (pp! "move" (str wroot "/src/hello.txt") (str wroot "/src/greetings.txt"))
