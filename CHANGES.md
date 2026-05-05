@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- `clone!` / `fetch!` validate `:source` and `:sources` entries against
+  `clj-p4.predicates/depot-path?`. The schema previously accepted any
+  string, so `""` and `"//"` slipped through and produced malformed
+  refs (`refs/heads/`) and trailers (`depot-paths = "/"`). Now raises
+  `:clj-p4/error :invalid-options` at the boundary.
 - `clone!` / `fetch!` reject `:sources` whose entries resolve to the
   same git ref. Two sources with the same basename (e.g.
   `["//d/main" "//e/main"]`) both default to `refs/heads/main` and the
