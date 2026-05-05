@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- `clj-p4.excludes/pattern->re` rejects the degenerate `""` and `"/"`
+  patterns with `:clj-p4/error :invalid-pattern` instead of crashing
+  with a JVM `StringIndexOutOfBoundsException`.
 - `clone!` / `fetch!` validate `:source` and `:sources` entries against
   `clj-p4.predicates/depot-path?`. The schema previously accepted any
   string, so `""` and `"//"` slipped through and produced malformed

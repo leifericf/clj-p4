@@ -53,6 +53,14 @@
     (let [re (ex/pattern->re "build/...")]
       (is (re-find re "build/x/y.o")))))
 
+(deftest pattern->re-rejects-degenerate-slash-test
+  (testing "the pattern \"/\" raises ex-info, not a JVM range exception"
+    (let [e (try (ex/pattern->re "/") :no-throw
+                 (catch clojure.lang.ExceptionInfo e e))]
+      (is (instance? clojure.lang.ExceptionInfo e))
+      (is (= :invalid-pattern (:clj-p4/error (ex-data e))))
+      (is (= "/" (:pattern (ex-data e)))))))
+
 (deftest matches-any?-test
   (let [compiled (ex/compile-patterns ["*.exe" "*.dll" "build/..."])]
     (is (ex/matches-any? compiled "foo.exe"))

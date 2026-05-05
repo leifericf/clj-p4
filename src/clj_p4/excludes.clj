@@ -34,6 +34,10 @@
      anything under it.
    - otherwise → matches at any depth (a containing-dir prefix is implied)."
   [pat]
+  (when (or (= "" pat) (= "/" pat))
+    (throw (ex-info (str "pattern->re: empty pattern " (pr-str pat))
+                    {:clj-p4/error :invalid-pattern
+                     :pattern      pat})))
   (let [anchored? (str/starts-with? pat "/")
         dir-only? (str/ends-with?   pat "/")
         core      (cond-> pat
