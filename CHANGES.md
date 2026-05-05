@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.3.0-alpha
+
+Third tagged release. Closes the read-side `t98xx` port roadmap from
+`git-p4`'s regression suite — every read-direction scenario that's not
+a deliberate architectural divergence (CLI shapes, branch detection)
+or a feature gap clj-p4 hasn't exposed yet (jobs, unshelve) now has
+integration coverage. Also surfaces and fixes a long-standing bug
+class around merge-parent detection. Same pre-alpha caveat applies —
+the public API will continue to move; pin a SHA, not a version.
+
 ### Added
 
 - `clone!` / `sync!` accept `:keep-empty-commits?` (default `false`).
