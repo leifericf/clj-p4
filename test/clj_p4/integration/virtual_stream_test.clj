@@ -38,7 +38,7 @@
   (let [conn   (fix/admin-conn-with-ticket)
         target (str (io/file (tmp-dir) "virt.git"))
         result (api/clone! {:conn   conn
-                            :stream "//stream/virtual"
+                            :source "//stream/virtual"
                             :target target})]
     (testing "clone returned commits and last-change"
       (is (string? (:target result)))

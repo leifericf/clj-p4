@@ -199,7 +199,23 @@ Paths:
 (pp! "add" (str wroot "/src/case.txt"))
 (pp! "submit" "-d" "t9834a: lowercase case.txt")
 
-;; --- change 10: large file > 1 MiB ----------------------------------------
+;; --- change 10: t9821 paths differing only in case ------------------------
+;; Adds an uppercase sibling next to change 9's lowercase file. Soft because
+;; case-insensitive servers (default on macOS/Windows p4d) reject the second
+;; add as a duplicate. The dockerized Linux p4d is case-sensitive so this
+;; lands; the matching test skips on case-insensitive servers.
+(write-text! (str wroot "/src/Case.txt") "upper\n")
+(pp-soft! "add" (str wroot "/src/Case.txt"))
+(pp-soft! "submit" "-d" "t9821: uppercase Case.txt next to case.txt")
+
+;; --- change 11: t9830 symlink pointing at a directory ---------------------
+;; `src/dirlink` → `oddly named` (a directory created in change 3). Tests
+;; that mode 120000 + the directory-name blob round-trip into git intact.
+(make-symlink! (str wroot "/src/dirlink") "oddly named")
+(pp! "add" "-t" "symlink" (str wroot "/src/dirlink"))
+(pp! "submit" "-d" "t9830: symlink pointing at a directory")
+
+;; --- change 12: large file > 1 MiB ----------------------------------------
 ;; Fixture only needs the file to be ≥ 1 MiB; content randomness is irrelevant.
 (write-bytes! (str wroot "/src/large.bin")
               (byte-array (* 2 1024 1024) (byte 0x42)))

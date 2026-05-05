@@ -22,7 +22,7 @@
   (let [conn   (fix/admin-conn-with-ticket)
         target (str (io/file (tmp-dir) "main.git"))
         result (api/clone! {:conn   conn
-                            :stream "//stream/main"
+                            :source "//stream/main"
                             :target target})]
     (testing "clone succeeded"
       (is (string? (:target result)))
@@ -39,7 +39,7 @@
 (deftest ^:integration t9800-sync-after-submit
   (let [conn   (fix/admin-conn-with-ticket)
         target (str (io/file (tmp-dir) "sync.git"))
-        clone-result (api/clone! {:conn conn :stream "//stream/main"
+        clone-result (api/clone! {:conn conn :source "//stream/main"
                                   :target target})
         before-commits (:commits clone-result)]
     ;; Submit a new change inside the docker container
@@ -52,6 +52,6 @@
            "p4 -c clj_p4_seed_main -u admin -P admin1234 submit -d 't9800-sync-extra'")]
      {:timeout-ms 60000})
 
-    (let [sync-result (api/sync! {:conn conn :stream "//stream/main"
+    (let [sync-result (api/sync! {:conn conn :source "//stream/main"
                                   :target target})]
       (is (= (inc before-commits) (:commit-count sync-result))))))
