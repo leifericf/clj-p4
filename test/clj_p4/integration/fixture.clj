@@ -12,6 +12,9 @@
 (def ^:private fixture-dir
   "test/fixtures/p4d")
 
+(def ^:private fixture-mixed-dir
+  "test/fixtures/p4d-mixed")
+
 (defn integration-enabled?
   "True if `CLJ_P4_INTEGRATION=1` is set in the environment."
   []
@@ -78,4 +81,65 @@
       (f)
       (finally
         (try (docker-down!) (catch Exception _))))
+    (println "[clj-p4] integration tests skipped (set CLJ_P4_INTEGRATION=1)")))
+
+;; --- Non-unicode (mixed-encoding) sidecar ---------------------------------
+;; Used by the metadata-encoding ports (t9835/t9836). The sidecar runs a
+;; second p4d on host port 1667 in *non-unicode* mode; its seed deliberately
+;; submits changelist descriptions with CP-1252 / Latin-1 bytes so the
+;; importer's metadata-decoder strategies have something real to chew on.
+
+(defn docker-up-mixed! []
+  (proc/run-checked! ["docker" "compose" "-f"
+                      (str (io/file fixture-mixed-dir "docker-compose.yml"))
+                      "up" "-d" "--build"]
+                     {:timeout-ms (* 10 60 1000)})
+  (loop [tries 60]
+    (let [{:keys [exit]}
+          (proc/run! ["docker" "compose" "-f"
+                      (str (io/file fixture-mixed-dir "docker-compose.yml"))
+                      "exec" "-T" "p4d-mixed"
+                      "p4" "-p" "tcp:localhost:1667" "info"]
+                     {:timeout-ms 5000})]
+      (cond
+        (zero? exit)   :ready
+        (zero? tries)  (throw (ex-info "p4d-mixed never became healthy" {}))
+        :else          (do (Thread/sleep 1000) (recur (dec tries)))))))
+
+(defn docker-down-mixed! []
+  (proc/run-checked! ["docker" "compose" "-f"
+                      (str (io/file fixture-mixed-dir "docker-compose.yml"))
+                      "down" "-v"]
+                     {:timeout-ms 60000}))
+
+(def ^:private mixed-conn
+  {:p4/port "tcp:localhost:1667"
+   :p4/user "admin"})
+
+(defn mixed-conn-with-ticket
+  "`p4 login -a -p` against the non-unicode sidecar. Charset is left
+   unset because the server isn't in unicode mode."
+  []
+  (let [{:keys [stdout-bytes]} (proc/run-checked!
+                                ["docker" "compose" "-f"
+                                 (str (io/file fixture-mixed-dir "docker-compose.yml"))
+                                 "exec" "-T" "p4d-mixed"
+                                 "sh" "-c"
+                                 "echo admin1234 | p4 -p tcp:localhost:1667 -u admin login -a -p"]
+                                {:timeout-ms 30000})
+        out  (String. ^bytes stdout-bytes "UTF-8")
+        lines (filter seq (clojure.string/split-lines out))
+        ticket (last lines)]
+    (assoc mixed-conn :p4/ticket ticket)))
+
+(defn with-p4d-mixed
+  "fn-1-arg fixture: brings the non-unicode sidecar up, runs `f`, takes
+   it down. Independent of `with-p4d`'s primary fixture."
+  [f]
+  (if (integration-enabled?)
+    (try
+      (docker-up-mixed!)
+      (f)
+      (finally
+        (try (docker-down-mixed!) (catch Exception _))))
     (println "[clj-p4] integration tests skipped (set CLJ_P4_INTEGRATION=1)")))

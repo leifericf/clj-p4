@@ -1,0 +1,17 @@
+services:
+  p4d-mixed:
+    build: .
+    image: clj-p4-p4d-mixed:local
+    container_name: clj-p4-p4d-mixed
+    ports:
+      - "1667:1667"
+    healthcheck:
+      test: ["CMD-SHELL", "p4 -p tcp:localhost:1667 info >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    volumes:
+      - p4-data-mixed:/p4
+
+volumes:
+  p4-data-mixed:

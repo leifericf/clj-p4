@@ -13,7 +13,90 @@
             [clojure.string :as str])
   (:import (java.io InputStream
                     PushbackInputStream)
+           (java.nio.charset Charset
+                             CharsetDecoder
+                             CodingErrorAction
+                             MalformedInputException
+                             UnmappableCharacterException)
+           (java.nio ByteBuffer)
            (java.util ArrayList)))
+
+;; --- Metadata decoding strategies -------------------------------------------
+;;
+;; Perforce in unicode mode (`p4d -xi`) returns all string values as UTF-8.
+;; Outside unicode mode, descriptions, usernames, and similar metadata can
+;; carry arbitrary client-locale bytes (CP-1252, Latin-1, etc.). The
+;; importer needs a configurable strategy here so non-unicode servers can
+;; still be cloned without crashing or producing mojibake.
+
+(defn- ^Charset charset-of [name]
+  (Charset/forName ^String name))
+
+(defn- ^CharsetDecoder strict-decoder [^Charset cs]
+  (doto (.newDecoder cs)
+    (.onMalformedInput      CodingErrorAction/REPORT)
+    (.onUnmappableCharacter CodingErrorAction/REPORT)))
+
+(defn- decode-bytes-strict [^Charset cs ^bytes bs]
+  (-> (strict-decoder cs)
+      (.decode (ByteBuffer/wrap bs))
+      .toString))
+
+(defn metadata-decoder
+  "Build a `(fn [bytes] String)` per the chosen strategy.
+
+   - `:strict`      — decode as UTF-8; on malformed/unmappable bytes
+                      throw `ex-info` with `:clj-p4/error
+                      :metadata-decode-failed`. Default. Matches
+                      git-p4's `metadataDecodingStrategy=strict`.
+   - `:fallback`    — try UTF-8; on failure decode with
+                      `fallback-encoding` (default CP-1252). Matches
+                      git-p4's `metadataDecodingStrategy=fallback`
+                      with `metadataFallbackEncoding`.
+   - `:passthrough` — decode as ISO-8859-1: a 1:1 byte → char mapping
+                      that never fails. Matches the `passthrough`
+                      semantics of upstream — every byte round-trips
+                      through git's UTF-8 blob bytes."
+  ([] (metadata-decoder :strict nil))
+  ([strategy] (metadata-decoder strategy nil))
+  ([strategy fallback-encoding]
+   (case strategy
+     :strict
+     (let [utf8 (charset-of "UTF-8")]
+       (fn [^bytes bs]
+         (try (decode-bytes-strict utf8 bs)
+              (catch MalformedInputException e
+                (throw (ex-info "Decoding perforce metadata failed!"
+                                {:clj-p4/error :metadata-decode-failed
+                                 :strategy     :strict
+                                 :length       (alength bs)} e)))
+              (catch UnmappableCharacterException e
+                (throw (ex-info "Decoding perforce metadata failed!"
+                                {:clj-p4/error :metadata-decode-failed
+                                 :strategy     :strict
+                                 :length       (alength bs)} e))))))
+
+     :fallback
+     (let [utf8     (charset-of "UTF-8")
+           fallback (charset-of (or fallback-encoding "CP1252"))]
+       (fn [^bytes bs]
+         (try (decode-bytes-strict utf8 bs)
+              (catch MalformedInputException _
+                (String. bs fallback))
+              (catch UnmappableCharacterException _
+                (String. bs fallback)))))
+
+     :passthrough
+     (let [latin1 (charset-of "ISO-8859-1")]
+       (fn [^bytes bs] (String. bs latin1))))))
+
+(def ^:dynamic *decode-string*
+  "The currently-bound `(fn [bytes] String)` used by `decode-value` to
+   turn marshal byte payloads into strings. Default is the strict
+   UTF-8 decoder, matching the importer's default behaviour for
+   unicode-mode servers. Bound by `clj-p4.api/clone!` (and `sync!`)
+   when the caller passes `:metadata-decoding-strategy`."
+  (metadata-decoder :strict))
 
 ;; --- Python marshal decoder -------------------------------------------------
 
@@ -94,9 +177,9 @@
       (= t TYPE-INT64)  (let [lo (read-uint32-le! is)
                               hi (read-int32-le! is)]
                           (bit-or lo (bit-shift-left hi 32)))
-      (= t TYPE-STRING) (String. ^bytes (read-bytes! is (read-uint32-le! is)) "UTF-8")
+      (= t TYPE-STRING) (*decode-string* (read-bytes! is (read-uint32-le! is)))
       (= t TYPE-INTERNED)
-      (let [s (String. ^bytes (read-bytes! is (read-uint32-le! is)) "UTF-8")]
+      (let [s (*decode-string* (read-bytes! is (read-uint32-le! is)))]
         (.add intern-tab s)
         s)
       (= t TYPE-STRINGREF)

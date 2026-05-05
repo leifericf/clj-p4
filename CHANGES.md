@@ -10,6 +10,19 @@
   *skip* the resulting empty commit so the imported history matches
   the touching CLs. Set to `true` to preserve every CL as a commit
   regardless of its post-filter file count.
+- `clone!` / `sync!` accept `:metadata-decoding-strategy` (default
+  `:strict`) and `:metadata-fallback-encoding` (default `"CP1252"`).
+  Mirror of git-p4's `metadataDecodingStrategy` / `metadataFallbackEncoding`:
+  control how the importer decodes byte payloads coming back from p4
+  (descriptions, usernames, etc.) into strings.
+  - `:strict` — UTF-8 only; throw `ex-info :metadata-decode-failed`
+    on malformed bytes.
+  - `:fallback` — try UTF-8; fall back to `:metadata-fallback-encoding`
+    on failure (CP-1252 by default).
+  - `:passthrough` — decode as ISO-8859-1 (every byte → one char);
+    never throws.
+  Required to clone non-unicode-mode p4 servers whose metadata may
+  carry CP-1252, Latin-1, or mixed bytes.
 - `clj-p4.parse.depot-path/unescape` — decode `%XX` percent-escapes in
   Perforce depot paths back to literal characters (`%40`→`@`, `%23`→`#`,
   `%2A`→`*`, `%25`→`%`, plus any other `%XX`). Applied automatically by

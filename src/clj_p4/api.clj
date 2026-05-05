@@ -5,6 +5,7 @@
    delegated to `clj-p4.shell.*`; orchestration delegated to
    `clj-p4.execute`."
   (:require [clj-p4.execute :as execute]
+            [clj-p4.parse.marshal :as marshal]
             [clj-p4.plan :as plan]
             [clj-p4.schema :as schema]
             [clj-p4.shell.git :as git]
@@ -141,12 +142,19 @@
     :empty nil))
 
 (defn- classic-depot-error?
-  "True if `e` is a `:proc-failed` ex-info from `p4 stream -o` reporting
-   that the path is not a stream — meaning it's a classic depot path."
+  "True if `e` is a `:proc-failed` ex-info from `p4 stream -o` whose
+   shape is consistent with the path being a classic (non-stream) depot.
+
+   The error text comes back differently in different wire modes:
+   `-G` (marshal) puts it in stderr as `not a stream`/`no such stream`;
+   `-Mj` (JSON) emits the failure record on stdout, leaving stderr
+   empty. Rather than try to enumerate every server-version-specific
+   phrasing across both wire modes, we treat *any* `:proc-failed` from
+   the stream-spec call as a candidate for the classic fallback —
+   genuinely transient failures (auth, network) will surface again
+   when `with-classic-client` tries to talk to the same server."
   [e]
-  (let [{:keys [stderr]} (ex-data e)]
-    (and stderr
-         (boolean (re-find #"(?i)not a stream|no such stream" (str stderr))))))
+  (= :proc-failed (:clj-p4/error (ex-data e))))
 
 (defn- resolve-source
   "Decide whether `source` is a stream (returns `{:source-type :stream
@@ -351,14 +359,18 @@
   (assert-target-empty! target)
   (let [base (-> args
                  (dissoc :source :sources :source->ref :ref)
-                 (assoc :progress-fn progress-fn :stop? stop?))]
-    (if sources
-      (mapv (fn [src]
-              (let [src-ref (or (get source->ref src)
-                                (default-ref-of-source src))]
-                (clone-one! base src src-ref)))
-            sources)
-      (clone-one! base source ref))))
+                 (assoc :progress-fn progress-fn :stop? stop?))
+        decoder (marshal/metadata-decoder
+                 (or (:metadata-decoding-strategy args) :strict)
+                 (:metadata-fallback-encoding args))]
+    (binding [marshal/*decode-string* decoder]
+      (if sources
+        (mapv (fn [src]
+                (let [src-ref (or (get source->ref src)
+                                  (default-ref-of-source src))]
+                  (clone-one! base src src-ref)))
+              sources)
+        (clone-one! base source ref)))))
 
 (defn- last-trailer-message
   "Body of the most recent commit on `ref` whose message matches the
@@ -489,11 +501,15 @@
                     {:clj-p4/error :no-source})))
   (let [base (-> args
                  (dissoc :source :sources :source->ref :ref)
-                 (assoc :progress-fn progress-fn :stop? stop?))]
-    (if sources
-      (mapv (fn [src]
-              (let [src-ref (or (get source->ref src)
-                                (default-ref-of-source src))]
-                (sync-one! base src src-ref)))
-            sources)
-      (sync-one! base source ref))))
+                 (assoc :progress-fn progress-fn :stop? stop?))
+        decoder (marshal/metadata-decoder
+                 (or (:metadata-decoding-strategy args) :strict)
+                 (:metadata-fallback-encoding args))]
+    (binding [marshal/*decode-string* decoder]
+      (if sources
+        (mapv (fn [src]
+                (let [src-ref (or (get source->ref src)
+                                  (default-ref-of-source src))]
+                  (sync-one! base src src-ref)))
+              sources)
+        (sync-one! base source ref)))))
