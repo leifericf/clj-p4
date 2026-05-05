@@ -79,12 +79,22 @@
 
 (defn- resolve-changes
   "List changelist numbers visible at `query-path` (already includes the
-   trailing `/...`), sorted oldest-first."
-  [conn query-path {:keys [max-changes since]} mode]
+   trailing `/...`), sorted oldest-first.
+
+   When `:changes-block-size` is set, walks the CL range in fixed-size
+   windows so no single `p4 changes` call exceeds the server's per-group
+   `MaxResults` limit. Without it, a single `p4 changes -m N` call
+   pulls everything (subject to `:max-changes` if also set)."
+  [conn query-path {:keys [max-changes since changes-block-size]} mode]
   (mapv :p4/change
         (sort-by :p4/change
-                 (p4/changes conn query-path
-                             :mode mode :max max-changes :since since))))
+                 (if changes-block-size
+                   (p4/changes-blocked conn query-path
+                                       :mode mode
+                                       :since (or since 0)
+                                       :block-size changes-block-size)
+                   (p4/changes conn query-path
+                               :mode mode :max max-changes :since since)))))
 
 (defn- target-status
   "Classify `target` for `clone!` pre-flight: `:empty` (does not exist
@@ -200,11 +210,14 @@
    passed to `p4 changes`. `stream-chain` is the parent-first list of
    stream specs the executor uses for view composition. `view-val` is
    a pre-built `View` (auto-view paths) or nil to derive from the chain."
-  [{:keys [target max-changes exclude ref progress-fn stop?] :as ctx}
+  [{:keys [target max-changes changes-block-size exclude ref
+           progress-fn stop?] :as ctx}
    clone-conn query-path stream-chain view-val]
   (let [mode     (:mode ctx)
         changes  (resolve-changes clone-conn query-path
-                                  {:max-changes max-changes} mode)
+                                  {:max-changes max-changes
+                                   :changes-block-size changes-block-size}
+                                  mode)
         plan-val (plan/clone-plan
                   {:conn         clone-conn
                    :stream-chain stream-chain
@@ -402,11 +415,14 @@
    `:since` to filter `p4 changes`, builds a `sync-plan`, skips
    `init-bare!`, and folds the change count into the returned
    `repo-state`."
-  [{:keys [target since exclude ref progress-fn stop?] :as ctx}
+  [{:keys [target since changes-block-size exclude ref
+           progress-fn stop?] :as ctx}
    sync-conn query-path stream-chain view-val]
   (let [mode        (:mode ctx)
         new-changes (resolve-changes sync-conn query-path
-                                     {:since (inc since)} mode)]
+                                     {:since (inc since)
+                                      :changes-block-size changes-block-size}
+                                     mode)]
     (if (seq new-changes)
       (let [plan-val (plan/sync-plan
                       {:conn         sync-conn

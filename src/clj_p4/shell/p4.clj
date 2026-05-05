@@ -25,7 +25,8 @@
 (def ^:private read-only-subcommands
   "p4 subcommands that read state without mutating the depot."
   #{"info" "streams" "changes" "describe" "print" "files" "fstat"
-    "integrated" "labels" "users" "protects" "where" "dirs" "sizes"})
+    "integrated" "labels" "users" "protects" "where" "dirs" "sizes"
+    "counter"})
 
 (def ^:private metadata-write-subcommands
   "p4 subcommands that modify server metadata (specs, clients) but never
@@ -163,6 +164,50 @@
     (->> (run-p4! conn (with-mode-flag mode) args)
          (decode mode)
          (mapv ps/parse-changelist))))
+
+(defn- head-change
+  "Highest committed changelist number on the server. Uses `p4 counter
+   change` rather than `p4 changes -m 1`: the counter is admin-domain
+   metadata not subject to per-group `MaxResults` / `MaxScanRows`,
+   which means the head probe won't itself trip the very limit
+   block-mode is meant to dodge."
+  [conn]
+  (let [bytes (run-p4! conn [] ["counter" "change"])
+        s     (str/trim (String. ^bytes bytes "UTF-8"))]
+    (when (re-matches #"\d+" s)
+      (Long/parseLong s))))
+
+(defn changes-blocked
+  "Like `changes` but walks the changelist range in fixed-size windows
+   so each individual `p4 changes` call returns at most `block-size`
+   records — enough to stay under per-group `MaxResults` / `MaxScanRows`
+   limits on busy servers (mirrors git-p4's `--changes-block-size`).
+
+   Probes the server head CL once via `p4 counter change`, then iterates
+   `p4 changes <path>@A,B` over windows `[since+1 .. since+block-size]`,
+   `[+1 .. +2N]`, … up to head. Returns the union as a flat seq of
+   `ChangelistRecord`s, NOT pre-sorted — the caller sorts
+   (`resolve-changes` always does).
+
+   `:since` defaults to 0 (whole history). The function is a no-op
+   (returns `()`) when `:since >= head`."
+  [conn path & {:keys [mode block-size since]
+                :or   {mode :G, since 0}}]
+  (assert (and block-size (pos? block-size))
+          ":block-size must be a positive int")
+  (let [head (head-change conn)]
+    (if (or (nil? head) (>= since head))
+      ()
+      (loop [lo (inc since), acc []]
+        (if (> lo head)
+          acc
+          (let [hi   (min head (+ lo (dec block-size)))
+                arg  (str path "@" lo "," hi)
+                recs (->> (run-p4! conn (with-mode-flag mode)
+                                   ["changes" "-l" arg])
+                          (decode mode)
+                          (mapv ps/parse-changelist))]
+            (recur (inc hi) (into acc recs))))))))
 
 (defn labels
   "`p4 labels` → seq of `{:label/name :label/owner :label/desc :label/update}`."

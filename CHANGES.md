@@ -10,6 +10,18 @@
   *skip* the resulting empty commit so the imported history matches
   the touching CLs. Set to `true` to preserve every CL as a commit
   regardless of its post-filter file count.
+- `clone!` / `sync!` accept `:changes-block-size` (positive int, no
+  default — present means block-mode). Mirrors git-p4's
+  `--changes-block-size`: walks `p4 changes` in fixed-size changelist
+  windows so each individual call returns at most N records, staying
+  under per-group `MaxResults` / `MaxScanRows` server limits. The
+  head probe uses `p4 counter change` (not `p4 changes -m 1`) so it
+  isn't itself bound by MaxResults.
+- `clj-p4.shell.p4/changes-blocked` — companion to `changes` that walks
+  `[since+1, +block-size]`, `[+1, +2*block-size]`, … windows up to
+  the server head. Aggregate is identical to an unbounded `changes`
+  call; intended purely as a fetch strategy for restricted users.
+- `counter` is now on the `p4` read-only allowlist (was missing).
 - `clone!` / `sync!` accept `:metadata-decoding-strategy` (default
   `:strict`) and `:metadata-fallback-encoding` (default `"CP1252"`).
   Mirror of git-p4's `metadataDecodingStrategy` / `metadataFallbackEncoding`:

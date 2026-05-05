@@ -72,6 +72,26 @@
         ticket (last lines)]
     (assoc admin-conn :p4/ticket ticket)))
 
+(defn block-test-conn-with-ticket
+  "ConnectionSpec for the `block_test` user, who's constrained by the
+   `clj_p4_block_test` group's `MaxResults: 5`. Used by the t9818
+   block-mode change-fetching test."
+  []
+  (let [{:keys [stdout-bytes]} (proc/run-checked!
+                                ["docker" "compose" "-f"
+                                 (str (io/file fixture-dir "docker-compose.yml"))
+                                 "exec" "-T" "p4d"
+                                 "sh" "-c"
+                                 "echo admin1234 | p4 -p tcp:localhost:1666 -u block_test login -a -p"]
+                                {:timeout-ms 30000})
+        out  (String. ^bytes stdout-bytes "UTF-8")
+        lines (filter seq (clojure.string/split-lines out))
+        ticket (last lines)]
+    {:p4/port    "tcp:localhost:1666"
+     :p4/user    "block_test"
+     :p4/charset :utf8
+     :p4/ticket  ticket}))
+
 (defn with-p4d
   "fn-2-arg fixture: brings p4d up, runs `f`, takes it down."
   [f]

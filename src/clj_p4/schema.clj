@@ -236,6 +236,7 @@
    [:lookahead {:optional true} [:maybe [:int {:min 0}]]]
    [:no-merge? {:optional true} [:maybe boolean?]]
    [:keep-empty-commits? {:optional true} [:maybe boolean?]]
+   [:changes-block-size {:optional true} [:maybe pos-int?]]
    [:metadata-decoding-strategy {:optional true}
     [:enum :strict :fallback :passthrough]]
    [:metadata-fallback-encoding {:optional true} [:maybe string?]]

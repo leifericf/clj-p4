@@ -237,5 +237,32 @@ Paths:
 (pp! "add" "-t" "binary" (str wroot "/src/large.bin"))
 (pp! "submit" "-d" "large binary (2 MiB)")
 
+;; --- t9818 block-mode user + group ----------------------------------------
+;; Creates a non-admin user `block_test` constrained by group
+;; `clj_p4_block_test` with `MaxResults: 5`. The matching integration
+;; test issues `p4 changes` against the seeded depot using this user;
+;; without `:changes-block-size` the call exceeds MaxResults and the
+;; server refuses, with `:changes-block-size 5` the request succeeds in
+;; chunks. A real ≥40-CL fixture would be over-engineered — the seed
+;; already has ≥10 changes, comfortably more than the limit.
+(p4-stdin! "User: block_test\nEmail: block@example.com\nFullName: t9818 block-mode user\n"
+           "user" "-f" "-i")
+;; Admin sets the new user's password directly (no old-password challenge).
+(p4-stdin! (str p4passwd "\n" p4passwd "\n") "passwd" "block_test")
+;; MaxResults: 12 means any `p4 changes` whose result set exceeds 12
+;; fails. The seed has 13 CLs on //stream/main, so an unbounded clone
+;; via block_test reliably trips the limit. The matching test uses
+;; block-size 5 to stay safely under it. (We can't set MaxResults too
+;; low — the importer's ephemeral-client `changes -l -m 1` probe
+;; touches client metadata that internally scans more rows than the
+;; visible result count, and a too-tight cap rejects even the head
+;; probe.)
+(p4-stdin! (str "Group: clj_p4_block_test\n"
+                "MaxResults: 12\n"
+                "MaxScanRows: 1000\n"
+                "Timeout: 43200\n"
+                "Users:\n\tblock_test\n")
+           "group" "-i")
+
 (println "[seed] done. Latest change:")
 (p4! "changes" "-m1")
