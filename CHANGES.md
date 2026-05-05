@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.5.1-alpha
+
+Hardening pass driven by an adversarial-test sweep. Eleven boundary
+fixes across the public API, the audit harness, the excludes layer,
+the depot-path decoder, and the runner. Behaviour-preserving for the
+happy path; previously-silent typos, malformed inputs, and exception
+swallowing now fail loud at the boundary with `:clj-p4/error
+:invalid-options` (or a more specific tag) instead of corrupting an
+import or hiding a real bug.
+
 ### Fixed
 
 - `:source->ref` keys are validated as depot paths. The schema previously
