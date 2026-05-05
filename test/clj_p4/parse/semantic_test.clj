@@ -133,6 +133,27 @@
     (is (= 3             (:rev/rev   (first files))))
     (is (= #{:ko}        (:rev/keyword-flags (second files))))))
 
+(deftest unknown-action-decodes-to-nil-test
+  (testing "wire actions outside the documented set decode to nil"
+    (doseq [unknown ["archive" "modify" "lock" "weirdo" ""]]
+      (let [[f] (ps/parse-files-list
+                 [{"depotFile" "//d/x" "action" unknown "type" "text"}])]
+        (is (nil? (:rev/action f))
+            (str "unknown wire action " (pr-str unknown)
+                 " should surface as nil, not " (pr-str (:rev/action f)))))))
+  (testing "every documented wire action still decodes to its keyword"
+    (doseq [[wire kw] [["add"         :add]
+                       ["edit"        :edit]
+                       ["delete"      :delete]
+                       ["branch"      :branch]
+                       ["integrate"   :integrate]
+                       ["purge"       :purge]
+                       ["move/add"    :move/add]
+                       ["move/delete" :move/delete]]]
+      (let [[f] (ps/parse-files-list
+                 [{"depotFile" "//d/x" "action" wire "type" "text"}])]
+        (is (= kw (:rev/action f)))))))
+
 (deftest unparseable-numeric-fields-decode-to-nil-test
   (testing "non-digit `change` string"
     (let [cl (ps/parse-changelist {"change" "abc" "user" "x"

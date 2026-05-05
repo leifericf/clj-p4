@@ -33,6 +33,11 @@
 
 ### Fixed
 
+- Parser preserves the closed-table semantics for `:rev/action`:
+  unknown wire tokens (e.g. `"archive"`, `"modify"`) decode to nil
+  instead of being smuggled through as a fresh keyword. Restores the
+  pre-V3 observability property — if p4 emits a new action, it
+  surfaces as an invariant break rather than a silent passthrough.
 - Boundary validation tolerates the same shapes the implementation
   always handled gracefully: `:p4/timeout-ms` / `:p4/retry-backoff-ms`
   accept any positive number (not only ints — JSON sources often

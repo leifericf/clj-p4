@@ -53,13 +53,31 @@
                                    (* 1000 n))
                      :else v))}}])
 
+(def ^:private action-wire->kw
+  "Closed lookup table from p4 wire action token to its keyword.
+   Unknown wire tokens decode to nil so the parser surfaces invariant
+   breaks instead of smuggling unrecognised actions through as fresh
+   keywords."
+  {"add"         :add
+   "edit"        :edit
+   "delete"      :delete
+   "branch"      :branch
+   "integrate"   :integrate
+   "purge"       :purge
+   "move/add"    :move/add
+   "move/delete" :move/delete})
+
 (def action
-  "FileRev action enum. Wire format is a string token from the table in
-   `parse-file-rev`; default keyword-decoding handles every value
-   (including `move/add` / `move/delete` since `keyword` parses the
-   namespace separator)."
-  [:enum :add :edit :delete :branch :integrate :purge
-         :move/add :move/delete])
+  "FileRev action enum. Wire format is a string token from the closed
+   `action-wire->kw` table; unknown tokens decode to nil rather than a
+   fresh keyword, preserving the pre-V3 observability property."
+  [:enum {:decode/string {:enter (fn [v]
+                                   (cond
+                                     (keyword? v) v
+                                     (string? v)  (action-wire->kw v)
+                                     :else        v))}}
+   :add :edit :delete :branch :integrate :purge
+   :move/add :move/delete])
 
 (def status
   "Changelist status enum."
