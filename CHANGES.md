@@ -2,6 +2,57 @@
 
 ## Unreleased
 
+Built-in binary filtering. clj-p4 has no Git LFS support, and plain
+Git handles binaries badly — no delta compression, repo bloat, slow
+clones, history-rewrite hazards. Pulling raw binaries out of a
+binary-heavy Perforce depot into git is rarely what users want, and
+every clj-p4 user importing one was reinventing the same exclude
+list. This release ships that list inside clj-p4 itself, plus a
+type-based catch-all that consults Perforce's own per-revision file
+type so unknown extensions are caught for free.
+
+### Breaking
+
+- **`clone!` and `fetch!` now drop binary-typed revisions by default.**
+  Any revision whose Perforce `:rev/type` is `:binary`, `:apple`, or
+  `:resource` is filtered out before `p4 print` runs. Pass
+  `:exclude-binaries? false` to restore the previous (let-everything-
+  through) behaviour. The type comes from `p4 describe -s` already
+  parsed by `clj-p4.records/parse-file-type`, so no additional P4
+  call is required.
+
+### Added
+
+- `clone!` / `fetch!` accept `:exclude-binaries?` (default `true`).
+  See the breaking-change note above.
+- `clone!` / `fetch!` accept `:exclude-categories` — `:all` or a set
+  of category keywords (`:images`, `:audio`, `:video`, `:models`,
+  `:archives`, `:fonts`, `:documents`, `:compiled`, `:engine-assets`)
+  selecting from a built-in `binaries.edn` resource. Compiled
+  internally; mutually exclusive with the existing `:exclude` (raw
+  compiled patterns), which now throws if both are set.
+- `clj-p4.excludes/binary-rev?` and `clj-p4.excludes/binary-rev-types`
+  — public predicate and the source set of base types it consults.
+  Designed for use as a runner `:exclude-fn`, but composable anywhere
+  a FileRev predicate is useful.
+- `clj-p4.excludes/exclude-patterns` accepts a new `:categories` key
+  for selecting from clj-p4's built-in resource (or from a
+  user-supplied `:resource` map, which still takes precedence).
+- `resources/clj_p4/excludes/binaries.edn` — nine generic categories
+  totalling ~90 patterns, lifted from Noumenon's curated list with
+  engine-specific groups (Unreal + Unity) merged into a single
+  `:engine-assets` bucket.
+
+### Changed
+
+- `merge-source-for-cl` now pre-filters `:integrate` files through
+  the same view + path-pattern + `:exclude-fn` check as
+  `materialize-ops` before issuing per-file `p4 integrated` /
+  `p4 fstat` lookups. A changelist whose integrates are all excluded
+  (e.g. a binary asset re-integration) costs zero merge-source RPCs
+  — and the merge-parent decision now considers only files that
+  survive into git, which is the right semantics anyway.
+
 ## 0.4.0-alpha
 
 Vocabulary alignment + structural cleanup. The codebase now follows a
