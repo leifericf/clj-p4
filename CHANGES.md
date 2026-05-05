@@ -4,10 +4,14 @@
 
 ### Fixed
 
-- `clj-p4.audit/audit-deep!` validates `:sample` at the boundary. Values
-  other than `:all` or a positive integer (`0`, `nil`, negatives, floats)
-  now raise `:clj-p4/error :invalid-options` instead of bubbling out an
-  `ArithmeticException` / `NullPointerException` from inside `pick-sample`.
+- `clj-p4.audit/audit-tip` and `clj-p4.audit/audit-deep!` now validate
+  their option maps against malli schemas (`audit-tip-options`,
+  `audit-deep-options`) before any I/O. Missing `:conn`, missing /
+  malformed `:target`, non-depot-path `:source`, and the
+  previously-unguarded `:sample` values all raise
+  `:clj-p4/error :invalid-options` with a humanized message — the same
+  pattern `clone!` / `fetch!` already use. Subsumes the standalone
+  `:sample` runtime check added earlier this section.
 
 ## 0.5.0-alpha
 

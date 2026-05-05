@@ -150,6 +150,34 @@
                         (-> result :divergence :p4-sha))))))
         (finally (rm-rf d))))))
 
+(deftest audit-tip-rejects-invalid-options-test
+  (testing "audit-tip rejects misshapen options at the boundary"
+    (doseq [[label args] [[:no-conn   {:target "/tmp/x" :source "//stream/main"}]
+                          [:no-target {:conn {:p4/port "h:1666"} :source "//stream/main"}]
+                          [:nil-target {:conn {:p4/port "h:1666"} :target nil :source "//stream/main"}]
+                          [:bad-source {:conn {:p4/port "h:1666"} :target "/tmp/x" :source ""}]]]
+      (let [e (try (audit/audit-tip args) :no-throw
+                   (catch clojure.lang.ExceptionInfo e e))]
+        (is (instance? clojure.lang.ExceptionInfo e)
+            (str label " should raise ex-info"))
+        (is (= :invalid-options (:clj-p4/error (ex-data e)))
+            (str label " should produce :invalid-options, got "
+                 (pr-str (:clj-p4/error (ex-data e)))))))))
+
+(deftest audit-deep-rejects-invalid-options-test
+  (testing "audit-deep! rejects misshapen options at the boundary"
+    (doseq [[label args] [[:no-conn   {:target "/tmp/x" :source "//stream/main"}]
+                          [:no-target {:conn {:p4/port "h:1666"} :source "//stream/main"}]
+                          [:nil-source {:conn {:p4/port "h:1666"} :target "/tmp/x" :source nil}]
+                          [:bad-source {:conn {:p4/port "h:1666"} :target "/tmp/x" :source "//"}]]]
+      (let [e (try (audit/audit-deep! args) :no-throw
+                   (catch clojure.lang.ExceptionInfo e e))]
+        (is (instance? clojure.lang.ExceptionInfo e)
+            (str label " should raise ex-info"))
+        (is (= :invalid-options (:clj-p4/error (ex-data e)))
+            (str label " should produce :invalid-options, got "
+                 (pr-str (:clj-p4/error (ex-data e)))))))))
+
 (deftest audit-deep-rejects-invalid-sample-test
   (testing ":sample must be :all or a positive int — boundary check"
     (doseq [bad [0 -1 nil 1.5]]

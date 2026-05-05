@@ -261,6 +261,28 @@
         (conj common-fields
               [:since {:optional true} [:maybe pos-int?]])))
 
+;; ---------------- Audit options ----------------
+
+(def audit-tip-options
+  "`clj-p4.audit/audit-tip` options. Same connection / target / source
+   shape as `clone!` / `fetch!`, minus everything not relevant to the
+   tip-only check."
+  [:map {:closed false}
+   [:conn   connection-spec]
+   [:target file-coercible]
+   [:source depot-path]
+   [:ref {:optional true} string?]])
+
+(def audit-deep-options
+  "`clj-p4.audit/audit-deep!` options. Adds `:sample` (`:all` or a
+   positive integer)."
+  [:map {:closed false}
+   [:conn   connection-spec]
+   [:target file-coercible]
+   [:source depot-path]
+   [:ref {:optional true} string?]
+   [:sample {:optional true} [:or [:= :all] pos-int?]]])
+
 ;; ---------------- Wire-format coercion transformer ----------------
 
 (def record-transformer

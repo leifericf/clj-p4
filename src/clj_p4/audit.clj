@@ -16,9 +16,23 @@
   (:require [clj-p4.api :as api]
             [clj-p4.io.p4 :as p4]
             [clj-p4.io.subprocess :as proc]
-            [clojure.string :as str])
+            [clj-p4.schemas :as schemas]
+            [clojure.string :as str]
+            [malli.core :as m]
+            [malli.error :as me])
   (:import (java.io ByteArrayOutputStream)
            (java.security MessageDigest)))
+
+(defn- validate-options!
+  [schema-val args op-name]
+  (when-not (m/validate schema-val args)
+    (let [explanation (m/explain schema-val args)]
+      (throw (ex-info (str op-name " options invalid: "
+                           (me/humanize explanation))
+                      {:clj-p4/error :invalid-options
+                       :op           op-name
+                       :explanation  explanation
+                       :args         args})))))
 
 (defn- git-tree-summary
   "Return `{:git/file-count :git/total-bytes}` for `ref` in `target`.
@@ -56,7 +70,9 @@
    on individual files even when content is correct. A small disagreement
    is a hint, not a verdict."
   [{:keys [conn target source ref]
-    :or   {ref "refs/heads/main"}}]
+    :or   {ref "refs/heads/main"}
+    :as   args}]
+  (validate-options! schemas/audit-tip-options args "audit-tip")
   (let [{:keys [last-change]} (api/repo-state target :ref ref)
         _ (when-not last-change
             (throw (ex-info "audit-tip: no [git-p4: ...] trailer in tip"
@@ -176,14 +192,9 @@
    a known mismatch."
   [{:keys [conn target source ref sample]
     :or   {ref    "refs/heads/main"
-           sample 10}}]
-  (when-not (or (= :all sample)
-                (and (integer? sample) (pos? sample)))
-    (throw (ex-info (str "audit-deep! :sample must be :all or a positive integer, got "
-                         (pr-str sample))
-                    {:clj-p4/error :invalid-options
-                     :op           "audit-deep!"
-                     :sample       sample})))
+           sample 10}
+    :as   args}]
+  (validate-options! schemas/audit-deep-options args "audit-deep!")
   (let [commits   (commits-with-trailers target ref)
         sampled   (pick-sample commits sample)
         ;; A simple convention: source paths in git use the same
