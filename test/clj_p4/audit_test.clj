@@ -150,6 +150,23 @@
                         (-> result :divergence :p4-sha))))))
         (finally (rm-rf d))))))
 
+(deftest audit-deep-rejects-invalid-sample-test
+  (testing ":sample must be :all or a positive int — boundary check"
+    (doseq [bad [0 -1 nil 1.5]]
+      (let [e (try (audit/audit-deep!
+                    {:conn   {:p4/port "h:1666"}
+                     :target "/tmp/clj-p4-audit-test-noop"
+                     :source "//stream/main"
+                     :sample bad})
+                   :no-throw
+                   (catch clojure.lang.ExceptionInfo e e))]
+        (is (instance? clojure.lang.ExceptionInfo e)
+            (str ":sample " (pr-str bad) " should raise ex-info"))
+        (is (= :invalid-options (:clj-p4/error (ex-data e)))
+            (str ":sample " (pr-str bad)
+                 " should produce :invalid-options, got "
+                 (pr-str (:clj-p4/error (ex-data e)))))))))
+
 (deftest audit-tip-disagreement-test
   (testing "audit-tip flags ok? false when sizes disagree"
     (let [d (tmp-dir)

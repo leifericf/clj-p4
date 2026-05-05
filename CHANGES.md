@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- `clj-p4.audit/audit-deep!` validates `:sample` at the boundary. Values
+  other than `:all` or a positive integer (`0`, `nil`, negatives, floats)
+  now raise `:clj-p4/error :invalid-options` instead of bubbling out an
+  `ArithmeticException` / `NullPointerException` from inside `pick-sample`.
+
 ## 0.5.0-alpha
 
 Built-in binary filtering. clj-p4 has no Git LFS support, and plain

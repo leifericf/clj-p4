@@ -177,6 +177,13 @@
   [{:keys [conn target source ref sample]
     :or   {ref    "refs/heads/main"
            sample 10}}]
+  (when-not (or (= :all sample)
+                (and (integer? sample) (pos? sample)))
+    (throw (ex-info (str "audit-deep! :sample must be :all or a positive integer, got "
+                         (pr-str sample))
+                    {:clj-p4/error :invalid-options
+                     :op           "audit-deep!"
+                     :sample       sample})))
   (let [commits   (commits-with-trailers target ref)
         sampled   (pick-sample commits sample)
         ;; A simple convention: source paths in git use the same
