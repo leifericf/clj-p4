@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- `clone!` / `fetch!` reject `:exclude-categories` keywords that aren't
+  in `clj-p4.excludes/binary-categories`. A typo (e.g. `:image` for
+  `:images`) used to silently produce zero patterns, leaving the user
+  with an unfiltered import while believing they had filtering on. Now
+  raises `:clj-p4/error :unknown-exclude-category` with the offending
+  keys and the valid set.
 - `clj-p4.audit/audit-tip` and `clj-p4.audit/audit-deep!` now validate
   their option maps against malli schemas (`audit-tip-options`,
   `audit-deep-options`) before any I/O. Missing `:conn`, missing /

@@ -954,6 +954,43 @@
                           :includes ["*.psd"]})))
         (finally (rm-rf d))))))
 
+(deftest unknown-exclude-categories-rejected-test
+  (testing ":exclude-categories with a typo'd keyword is rejected up front"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))]
+      (try
+        (let [e (try (api/clone! {:conn               {:p4/port "h:1666"}
+                                  :source             "//stream/main"
+                                  :target             target
+                                  :exclude-categories #{:image}})
+                     :no-throw
+                     (catch clojure.lang.ExceptionInfo e e))]
+          (is (instance? clojure.lang.ExceptionInfo e))
+          (is (= :unknown-exclude-category (:clj-p4/error (ex-data e))))
+          (is (= #{:image} (:unknown (ex-data e)))))
+        (finally (rm-rf d)))))
+  (testing "a mix of known and unknown only flags the unknowns"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))]
+      (try
+        (let [e (try (api/clone! {:conn               {:p4/port "h:1666"}
+                                  :source             "//stream/main"
+                                  :target             target
+                                  :exclude-categories #{:images :nope :image}})
+                     :no-throw
+                     (catch clojure.lang.ExceptionInfo e e))]
+          (is (instance? clojure.lang.ExceptionInfo e))
+          (is (= :unknown-exclude-category (:clj-p4/error (ex-data e))))
+          (is (= #{:nope :image} (:unknown (ex-data e))))
+          (is (contains? (ex-data e) :valid)))
+        (finally (rm-rf d)))))
+  (testing ":exclude-categories :all stays accepted"
+    ;; clj-kondo guard: don't actually run the clone here; only assert
+    ;; that resolve-exclude doesn't throw on the keyword shape.
+    (let [pats (#'api/resolve-exclude {:exclude-categories :all})]
+      (is (vector? pats))
+      (is (pos? (count pats))))))
+
 (deftest source-ref-override-test
   (testing ":source->ref overrides default basename-derived refs"
     (let [d (tmp-dir)

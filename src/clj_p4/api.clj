@@ -59,6 +59,16 @@
                :exclude-categories exclude-categories
                :extra-excludes     extra-excludes
                :includes           includes})))
+    (when (set? exclude-categories)
+      (let [valid   (excludes/binary-categories)
+            unknown (into #{} (remove valid) exclude-categories)]
+        (when (seq unknown)
+          (throw (ex-info
+                  (str ":exclude-categories has unknown keyword(s) "
+                       (pr-str unknown) "; valid keys are " (pr-str valid))
+                  {:clj-p4/error :unknown-exclude-category
+                   :unknown      unknown
+                   :valid        valid})))))
     (cond
       exclude     exclude
       high-level? (-> {:categories     exclude-categories
