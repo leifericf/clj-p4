@@ -252,6 +252,74 @@ Paths:
 (pp! "add" "-t" "binary" (str wroot "/src/large.bin"))
 (pp! "submit" "-d" "large binary (2 MiB)")
 
+;; --- t9834 file-dir-bug: a path is first a file, then deleted, then
+;;     re-created as a directory containing children.
+(write-text! (str wroot "/src/becomes-dir") "I am a regular file\n")
+(pp! "add" (str wroot "/src/becomes-dir"))
+(pp! "submit" "-d" "t9834a: src/becomes-dir is a regular file")
+
+(pp! "delete" (str wroot "/src/becomes-dir"))
+(pp! "submit" "-d" "t9834b: delete src/becomes-dir before reinventing as a dir")
+
+(write-text! (str wroot "/src/becomes-dir/inside.txt") "now under a dir\n")
+(pp! "add" (str wroot "/src/becomes-dir/inside.txt"))
+(pp! "submit" "-d" "t9834c: src/becomes-dir is now a directory")
+
+;; --- t9828 user-map: a CL submitted by a non-admin user. ------------------
+;; The clj-p4 caller passes `:user-map {"alice" {:name "Alice ..." :email
+;; "alice@example.com"}}` and the resulting git commit's committer must
+;; reflect the mapped identity rather than the default `<user>@perforce`.
+(p4-stdin! "User: alice\nEmail: alice@noumenon.example\nFullName: Alice Author\n"
+           "user" "-f" "-i")
+(p4-stdin! (str p4passwd "\n" p4passwd "\n") "passwd" "alice")
+;; alice's workspace mirrors clj_p4_seed_main but is owned by alice.
+;; Bypass `p4!` (whose conn-args hard-code `-u admin`) and build alice's
+;; own connection so the `User:` field on her CL is recorded as alice.
+(let [ali-ws       "clj_p4_seed_alice"
+      ali-rt       "/p4/ws_alice"
+      ali-conn     ["-p" (str "tcp:localhost:" p4port)
+                    "-u" "alice" "-P" p4passwd
+                    "-c" ali-ws]
+      ali-shell    (fn [& args]
+                     (check! (apply proc/shell
+                                    {:out :string :err :string :continue true}
+                                    "p4" (concat ali-conn args))
+                             (str "alice " (str/join " " args))))
+      ali-shell-in (fn [stdin & args]
+                     (check! (apply proc/shell
+                                    {:in stdin :out :string :err :string
+                                     :continue true}
+                                    "p4" (concat ali-conn args))
+                             (str "alice " (str/join " " args))))]
+  (fs/create-dirs ali-rt)
+  (ali-shell-in (str "Client: " ali-ws "\n"
+                     "Owner: alice\n"
+                     "Root: " ali-rt "\n"
+                     "Stream: //stream/main\n"
+                     "Options: noallwrite noclobber nocompress unlocked nomodtime normdir\n"
+                     "LineEnd: local\n"
+                     "View:\n")
+                "client" "-S" "//stream/main" "-i")
+  (ali-shell "sync")
+  (write-text! (str ali-rt "/src/alices_change.txt") "submitted by alice\n")
+  (ali-shell "add" (str ali-rt "/src/alices_change.txt"))
+  (ali-shell "submit" "-d" "t9828: alice's change"))
+
+;; --- t9811 label import: a label spec applied at a specific CL ------------
+;; The clj-p4 caller passes `:emit-labels? true` and the importer should
+;; emit a git tag whose name matches the label and whose commit is the
+;; one corresponding to the label's `Revision: @<CL>`.
+(let [head-cl (-> (apply proc/shell {:out :string :err :string :continue true}
+                         "p4" (concat conn-args ["counter" "change"]))
+                  :out
+                  clojure.string/trim)]
+  (p4-stdin! (str "Label: t9811_release_1\n"
+                  "Owner: admin\n"
+                  "Description:\n\trelease label for the t9811 fixture\n"
+                  "Options: unlocked\n"
+                  "Revision: @" head-cl "\n")
+             "label" "-i"))
+
 ;; --- t9818 block-mode user + group ----------------------------------------
 ;; Creates a non-admin user `block_test` constrained by group
 ;; `clj_p4_block_test` with `MaxResults: 5`. The matching integration
