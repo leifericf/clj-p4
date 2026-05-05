@@ -147,6 +147,39 @@
 
 ;; ---------------- Public API options ----------------
 
+(deftest schema-tolerates-implementation-shapes-test
+  (testing ":p4/timeout-ms accepts any positive number, including doubles"
+    (is (m/validate s/connection-spec
+                    {:p4/port "h:1666" :p4/timeout-ms 1000.0}))
+    (is (m/validate s/connection-spec
+                    {:p4/port "h:1666" :p4/retry-backoff-ms 250.5})))
+  (testing "explicit nil for optional numeric option fields is treated as absent"
+    (let [base {:conn   {:p4/port "h:1666"}
+                :target "/tmp/r"
+                :source "//s/main"}]
+      (is (m/validate s/clone-options
+                      (assoc base :fetch-parallelism nil)))
+      (is (m/validate s/clone-options
+                      (assoc base :max-changes nil)))
+      (is (m/validate s/clone-options
+                      (assoc base :max-print-bytes nil)))
+      (is (m/validate s/clone-options
+                      (assoc base :lookahead nil)))))
+  (testing ":user-map entries with explicit nil :name / :email are admitted"
+    (is (m/validate s/clone-options
+                    {:conn     {:p4/port "h:1666"}
+                     :target   "/tmp/r"
+                     :source   "//s/main"
+                     :user-map {"alice" {:name nil :email "a@x"}
+                                "bob"   {:name "Bob" :email nil}}})))
+  (testing "still rejects values that are wrong-type, not just null"
+    (is (not (m/validate s/connection-spec
+                         {:p4/port "h:1666" :p4/timeout-ms "1s"})))
+    (is (not (m/validate s/clone-options
+                         {:conn   {:p4/port "h:1666"}
+                          :target "/tmp/r" :source "//s/main"
+                          :fetch-parallelism "many"})))))
+
 (deftest progress-and-stop-accept-any-callable-test
   (testing "Var (#'fn) is admitted for :stop? and :progress-fn"
     (is (m/validate s/clone-options

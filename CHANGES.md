@@ -33,6 +33,13 @@
 
 ### Fixed
 
+- Boundary validation tolerates the same shapes the implementation
+  always handled gracefully: `:p4/timeout-ms` / `:p4/retry-backoff-ms`
+  accept any positive number (not only ints — JSON sources often
+  produce doubles); explicit `nil` for any optional option field
+  (`:fetch-parallelism`, `:max-changes`, `:max-print-bytes`,
+  `:lookahead`, etc.) is treated as absent; and `:user-map` entries
+  may carry `nil` for `:name` / `:email`.
 - `clone!` / `sync!` `:progress-fn` and `:stop?` accept any `IFn`
   (Vars, keywords, sets, maps, etc.), not only literal `(fn …)`
   values. The implementation just calls them; the schema now matches.

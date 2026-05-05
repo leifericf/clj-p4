@@ -175,8 +175,14 @@
 
 (def user-map-entry
   [:map {:closed false}
-   [:name {:optional true} string?]
-   [:email {:optional true} string?]])
+   [:name {:optional true} [:maybe string?]]
+   [:email {:optional true} [:maybe string?]]])
+
+(def ^:private positive-number
+  "Any positive number — matches the older `clj-p4.spec/connection-spec?`
+   contract, which accepts doubles too (JSON sources often produce
+   them). Use this where a timeout / backoff is expressed in ms."
+  [:and number? pos?])
 
 (def connection-spec
   "Per `clj-p4.spec/connection-spec?`, plus the retry/timeout knobs that
@@ -187,9 +193,9 @@
    [:p4/client {:optional true} [:maybe string?]]
    [:p4/ticket {:optional true} [:maybe string?]]
    [:p4/charset {:optional true} keyword?]
-   [:p4/timeout-ms {:optional true} pos-int?]
+   [:p4/timeout-ms {:optional true} positive-number]
    [:p4/retries {:optional true} [:int {:min 0}]]
-   [:p4/retry-backoff-ms {:optional true} pos-int?]])
+   [:p4/retry-backoff-ms {:optional true} positive-number]])
 
 ;; ---------------- Public API options ----------------
 
@@ -203,14 +209,14 @@
    [:source {:optional true} string?]
    [:sources {:optional true} [:sequential string?]]
    [:source->ref {:optional true} [:map-of string? string?]]
-   [:max-changes {:optional true} pos-int?]
-   [:exclude {:optional true} vector?]
-   [:fetch-parallelism {:optional true} pos-int?]
-   [:max-print-bytes {:optional true} pos-int?]
-   [:user-map {:optional true} [:map-of string? user-map-entry]]
-   [:emit-labels? {:optional true} boolean?]
-   [:lookahead {:optional true} [:int {:min 0}]]
-   [:no-merge? {:optional true} boolean?]
+   [:max-changes {:optional true} [:maybe pos-int?]]
+   [:exclude {:optional true} [:maybe vector?]]
+   [:fetch-parallelism {:optional true} [:maybe pos-int?]]
+   [:max-print-bytes {:optional true} [:maybe pos-int?]]
+   [:user-map {:optional true} [:maybe [:map-of string? user-map-entry]]]
+   [:emit-labels? {:optional true} [:maybe boolean?]]
+   [:lookahead {:optional true} [:maybe [:int {:min 0}]]]
+   [:no-merge? {:optional true} [:maybe boolean?]]
    [:progress-fn {:optional true} ifn?]
    [:stop? {:optional true} ifn?]])
 
