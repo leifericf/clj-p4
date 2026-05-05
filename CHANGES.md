@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- `clj-p4.depot-path/unescape` rejects decoded paths containing control
+  bytes (`< 0x20` or `0x7F`) with `:clj-p4/error :invalid-depot-path-byte`.
+  Real P4 paths never contain control characters; rejecting them at the
+  unescape boundary stops a hostile or corrupted server from smuggling
+  NULs (or other garbage) into the `git fast-import` stream.
 - `clj-p4.runner/merge-source-for-cl` and `emit-labels!` no longer
   swallow arbitrary exceptions during `p4 integrated` / `p4 fstat` /
   `p4 labels` / `p4 label -o` lookups. Only `:clj-p4/error :proc-failed`

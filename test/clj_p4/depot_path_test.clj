@@ -44,3 +44,20 @@
   (testing "any %XX is decoded for forward-compat"
     (is (= " " (dp/unescape "%20")))
     (is (= "/" (dp/unescape "%2F")))))
+
+(deftest unescape-rejects-control-bytes
+  (testing "control characters in the decoded output raise ex-info"
+    (doseq [bad ["%00" "%01" "%1F" "%7f" "abc%00def" "//s/m/x%00.txt"]]
+      (let [e (try (dp/unescape bad) :no-throw
+                   (catch clojure.lang.ExceptionInfo e e))]
+        (is (instance? clojure.lang.ExceptionInfo e)
+            (str (pr-str bad) " should raise"))
+        (is (= :invalid-depot-path-byte (:clj-p4/error (ex-data e)))
+            (str (pr-str bad) " should produce :invalid-depot-path-byte, got "
+                 (pr-str (:clj-p4/error (ex-data e)))))
+        (is (contains? (ex-data e) :path)
+            "ex-data should include the offending input")
+        (is (contains? (ex-data e) :byte)
+            "ex-data should include the offending byte"))))
+  (testing "the boundary value just past control range (space, 0x20) passes"
+    (is (= " " (dp/unescape "%20")))))
