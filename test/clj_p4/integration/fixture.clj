@@ -50,14 +50,18 @@
    :p4/charset :utf8})
 
 (defn admin-conn-with-ticket
-  "Issue `p4 login -p` to get a ticket and return a ConnectionSpec carrying it."
+  "Issue `p4 login -a -p` to get a host-agnostic ticket and return a
+   ConnectionSpec carrying it. The `-a` flag is essential: a default
+   `login -p` ticket is bound to the issuing client's IP, which works
+   inside the docker container but not from the host running the test
+   process — those see different peer addresses for the same p4d."
   []
   (let [{:keys [stdout-bytes]} (proc/run-checked!
                                 ["docker" "compose" "-f"
                                  (str (io/file fixture-dir "docker-compose.yml"))
                                  "exec" "-T" "p4d"
                                  "sh" "-c"
-                                 "echo admin1234 | p4 -p tcp:localhost:1666 -u admin login -p"]
+                                 "echo admin1234 | p4 -p tcp:localhost:1666 -u admin login -a -p"]
                                 {:timeout-ms 30000})
         out  (String. ^bytes stdout-bytes "UTF-8")
         ;; The ticket is the last non-empty line of the output.
