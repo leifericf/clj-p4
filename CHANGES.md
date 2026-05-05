@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- `:source->ref` keys are validated as depot paths. The schema previously
+  allowed any string, so an empty / typo'd key silently failed to match
+  any `:sources` entry and the default ref derivation kicked in. Now
+  raises `:clj-p4/error :invalid-options` at the boundary, matching the
+  treatment `:source` and `:sources` already get.
 - `clj-p4.depot-path/unescape` rejects decoded paths containing control
   bytes (`< 0x20` or `0x7F`) with `:clj-p4/error :invalid-depot-path-byte`.
   Real P4 paths never contain control characters; rejecting them at the

@@ -1145,6 +1145,21 @@
                           :includes ["*.psd"]})))
         (finally (rm-rf d))))))
 
+(deftest source->ref-keys-must-be-depot-paths-test
+  (testing ":source->ref keys are validated as depot paths"
+    (doseq [bad-key ["" "//" "not-a-depot-path"]]
+      (let [args {:conn {:p4/port "h:1666"} :target "/tmp/x"
+                  :sources ["//stream/main"]
+                  :source->ref {bad-key "refs/heads/x"}}
+            e (try (api/clone! args) :no-throw
+                   (catch clojure.lang.ExceptionInfo e e))]
+        (is (instance? clojure.lang.ExceptionInfo e)
+            (str ":source->ref key " (pr-str bad-key) " should raise"))
+        (is (= :invalid-options (:clj-p4/error (ex-data e)))
+            (str ":source->ref key " (pr-str bad-key)
+                 " should produce :invalid-options, got "
+                 (pr-str (:clj-p4/error (ex-data e)))))))))
+
 (deftest source-must-be-depot-path-test
   (testing ":source / :sources entries must satisfy the depot-path predicate"
     (doseq [args [{:conn {:p4/port "h:1666"} :target "/tmp/x" :source ""}
