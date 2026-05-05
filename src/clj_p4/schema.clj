@@ -211,8 +211,8 @@
    [:emit-labels? {:optional true} boolean?]
    [:lookahead {:optional true} [:int {:min 0}]]
    [:no-merge? {:optional true} boolean?]
-   [:progress-fn {:optional true} fn?]
-   [:stop? {:optional true} fn?]])
+   [:progress-fn {:optional true} ifn?]
+   [:stop? {:optional true} ifn?]])
 
 (def clone-options
   "`clone!` options. The `:source` xor `:sources` constraint is enforced

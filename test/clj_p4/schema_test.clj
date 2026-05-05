@@ -147,6 +147,27 @@
 
 ;; ---------------- Public API options ----------------
 
+(deftest progress-and-stop-accept-any-callable-test
+  (testing "Var (#'fn) is admitted for :stop? and :progress-fn"
+    (is (m/validate s/clone-options
+                    {:conn        {:p4/port "h:1666"}
+                     :target      "/tmp/r"
+                     :source      "//s/main"
+                     :stop?       #'identity
+                     :progress-fn #'identity})))
+  (testing "plain anonymous fn still validates"
+    (is (m/validate s/clone-options
+                    {:conn   {:p4/port "h:1666"}
+                     :target "/tmp/r"
+                     :source "//s/main"
+                     :stop?  (constantly false)})))
+  (testing "non-callable values rejected"
+    (is (not (m/validate s/clone-options
+                         {:conn   {:p4/port "h:1666"}
+                          :target "/tmp/r"
+                          :source "//s/main"
+                          :stop?  42})))))
+
 (deftest sources-accepts-any-sequential-test
   (testing "vector of source strings validates"
     (is (m/validate s/clone-options

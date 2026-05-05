@@ -33,6 +33,9 @@
 
 ### Fixed
 
+- `clone!` / `sync!` `:progress-fn` and `:stop?` accept any `IFn`
+  (Vars, keywords, sets, maps, etc.), not only literal `(fn …)`
+  values. The implementation just calls them; the schema now matches.
 - `clone!` / `sync!` `:sources` accepts any sequential collection of
   strings, not only literal vectors — restores compatibility with the
   common idiom of building sources via `(map …)` / `(filter …)` /
