@@ -42,11 +42,13 @@
         clone-result (api/clone! {:conn conn :source "//stream/main"
                                   :target target})
         before-commits (:commits clone-result)]
-    ;; Submit a new change inside the docker container
+    ;; Submit a new change inside the docker container. Uses `set -eu`
+    ;; (no `-o pipefail` — the container's /bin/sh is dash, which doesn't
+    ;; recognise pipefail).
     (proc/run-checked!
      ["docker" "compose" "-f" "test/fixtures/p4d/docker-compose.yml"
       "exec" "-T" "p4d" "sh" "-c"
-      (str "set -euo pipefail; "
+      (str "set -eu; "
            "echo new > /p4/ws_main/src/extra.txt; "
            "p4 -c clj_p4_seed_main -u admin -P admin1234 add /p4/ws_main/src/extra.txt; "
            "p4 -c clj_p4_seed_main -u admin -P admin1234 submit -d 't9800-sync-extra'")]

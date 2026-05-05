@@ -200,13 +200,12 @@ Paths:
 (pp! "submit" "-d" "t9834a: lowercase case.txt")
 
 ;; --- change 10: t9821 paths differing only in case ------------------------
-;; Adds an uppercase sibling next to change 9's lowercase file. Soft because
-;; case-insensitive servers (default on macOS/Windows p4d) reject the second
-;; add as a duplicate. The dockerized Linux p4d is case-sensitive so this
-;; lands; the matching test skips on case-insensitive servers.
+;; Adds an uppercase sibling next to change 9's lowercase file. Strict
+;; because the docker fixture's p4d is Linux and case-sensitive — the
+;; matching test asserts both variants always coexist.
 (write-text! (str wroot "/src/Case.txt") "upper\n")
-(pp-soft! "add" (str wroot "/src/Case.txt"))
-(pp-soft! "submit" "-d" "t9821: uppercase Case.txt next to case.txt")
+(pp! "add" (str wroot "/src/Case.txt"))
+(pp! "submit" "-d" "t9821: uppercase Case.txt next to case.txt")
 
 ;; --- change N: t9812 P4-wildcard chars in filenames ----------------------
 ;; Files whose literal disk names contain `@`, `#`, `*`, `%`. p4 add -f

@@ -3,10 +3,9 @@
    sibling): `src/case.txt` and `src/Case.txt` coexist on a case-sensitive
    server and arrive as two distinct entries in the imported tree.
 
-   The seed submits the uppercase variant via `pp-soft!`, so a
-   case-insensitive p4d (default on macOS/Windows) silently drops it; the
-   docker fixture is Linux and case-sensitive. We branch on what the seed
-   actually produced rather than guarding on `p4 info`."
+   The docker fixture's p4d is Linux and case-sensitive, and `init-bare!`
+   forces `core.ignorecase=false` so fast-import on macOS hosts doesn't
+   merge the entries. Both files must always be present."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.java.io :as io]
             [clj-p4.api :as api]
@@ -21,15 +20,11 @@
         target (str (io/file (ga/tmp-dir "clj-p4-t9821") "case-only.git"))
         _      (api/clone! {:conn conn :source "//stream/main" :target target})
         paths  (set (map :path (ga/ls-tree target "refs/heads/main")))]
-    (is (contains? paths "src/case.txt")
-        "lowercase variant must always be present (added via strict pp!)")
-    (if (contains? paths "src/Case.txt")
-      (testing "case-sensitive server: both variants survive with their content"
-        (is (= "lower\n"
-               (ga/cat-blob-string target "refs/heads/main" "src/case.txt")))
-        (is (= "upper\n"
-               (ga/cat-blob-string target "refs/heads/main" "src/Case.txt"))))
-      (testing "case-insensitive server: only the lowercase variant lands"
-        ;; pp-soft! in seed.bb tolerates the rejected submit on stricter
-        ;; servers — verify the import didn't crash and produced a sane tree.
-        (is (some #(re-find #"^src/" %) paths))))))
+    (testing "both variants land as distinct tree entries"
+      (is (contains? paths "src/case.txt"))
+      (is (contains? paths "src/Case.txt")))
+    (testing "each variant carries its original content"
+      (is (= "lower\n"
+             (ga/cat-blob-string target "refs/heads/main" "src/case.txt")))
+      (is (= "upper\n"
+             (ga/cat-blob-string target "refs/heads/main" "src/Case.txt"))))))
