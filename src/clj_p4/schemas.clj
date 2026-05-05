@@ -229,6 +229,9 @@
    [:source->ref {:optional true} [:map-of string? string?]]
    [:max-changes {:optional true} [:maybe pos-int?]]
    [:exclude {:optional true} [:maybe vector?]]
+   [:exclude-binaries? {:optional true} [:maybe boolean?]]
+   [:exclude-categories {:optional true}
+    [:maybe [:or [:= :all] [:set keyword?]]]]
    [:fetch-parallelism {:optional true} [:maybe pos-int?]]
    [:max-print-bytes {:optional true} [:maybe pos-int?]]
    [:user-map {:optional true} [:maybe [:map-of string? user-map-entry]]]
