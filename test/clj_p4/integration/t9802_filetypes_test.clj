@@ -33,4 +33,14 @@
              (ga/cat-blob-string target "refs/heads/main" "src/link"))))
     (testing "+k / +ko stay as text mode 100644"
       (is (= "100644" (get-in tree ["src/kfile.txt" :mode])))
-      (is (= "100644" (get-in tree ["src/kofile.txt" :mode]))))))
+      (is (= "100644" (get-in tree ["src/kofile.txt" :mode]))))
+    (testing "broken symlink target survives a later rename of the file
+              it points at (p4-fusion bug #90 regression check)"
+      ;; src/link was added in change 2 pointing at "hello.txt"; change 6
+      ;; renamed src/hello.txt → src/greetings.txt. The symlink is not
+      ;; auto-rewritten, so its blob content stays "hello.txt" even
+      ;; though that file no longer exists in the tree.
+      (is (= "120000" (get-in tree ["src/link" :mode])))
+      (is (= "hello.txt"
+             (ga/cat-blob-string target "refs/heads/main" "src/link"))
+          "symlink content must be the original target, no rewrite"))))
