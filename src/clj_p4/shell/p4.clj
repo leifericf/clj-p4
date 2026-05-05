@@ -32,7 +32,7 @@
    touch depot file state. Each maps to the set of allowed first flags;
    `client -i` and `client -d` are necessary for ephemeral-client lifecycle."
   {"stream" #{"-o"}
-   "client" #{"-o" "-i" "-d"}
+   "client" #{"-o" "-i" "-d" "-f"}
    "label"  #{"-o"}
    "user"   #{"-o"}})
 
@@ -396,7 +396,11 @@
    client returns silently."
   [conn client-name]
   (try
-    (run-p4! conn [] ["client" "-d" client-name])
+    ;; `-f` because we create these clients with `Options: locked`; a
+    ;; plain `client -d` refuses to remove a locked client even when the
+    ;; same user owns it. Admin context (which the importer always runs
+    ;; in) has the privilege.
+    (run-p4! conn [] ["client" "-d" "-f" client-name])
     nil
     (catch Exception _ nil)))
 
