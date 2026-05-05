@@ -33,6 +33,11 @@
 
 ### Fixed
 
+- `bounded-pmap` short-circuits remaining work after the first
+  exception. Previously, a failure mid-changelist would leave workers
+  to drain the rest of the input — issuing wasted `p4 print` /
+  `p4 fstat` calls before the failure surfaced. Now subsequent items
+  skip `f` entirely once the first error is captured.
 - Parser preserves the closed-table semantics for `:rev/action`:
   unknown wire tokens (e.g. `"archive"`, `"modify"`) decode to nil
   instead of being smuggled through as a fresh keyword. Restores the

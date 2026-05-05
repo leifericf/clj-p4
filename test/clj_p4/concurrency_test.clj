@@ -86,6 +86,30 @@
       (bounded-pmap 1 f (range 10))
       (is (= 1 (.get peak)) "n=1 path must stay sequential"))))
 
+(deftest stops-feeding-after-first-exception-test
+  (testing "an exception on item 5 stops the rest from being processed"
+    (let [n        4
+          attempts (AtomicInteger. 0)
+          f        (fn [x]
+                     (.incrementAndGet attempts)
+                     (when (= x 5)
+                       (throw (ex-info "boom" {:x x})))
+                     ;; Hold workers a moment so the close has a chance
+                     ;; to land before they pull more work.
+                     (Thread/sleep 25)
+                     x)]
+      (try (bounded-pmap n f (range 200))
+           (is false "expected exception to propagate")
+           (catch clojure.lang.ExceptionInfo _))
+      ;; A handful of items can be in flight at the moment of throw
+      ;; (n workers, plus one fed into the channel buffer). The
+      ;; threshold is "well below" 200 — anything under ~3n means the
+      ;; helper short-circuited rather than draining the input.
+      (let [seen (.get attempts)]
+        (is (< seen (* 3 n))
+            (str "expected far fewer than 200 invocations after the "
+                 "first failure; saw " seen))))))
+
 (deftest empty-coll-test
   (testing "empty input returns empty vector"
     (is (= [] (bounded-pmap 4 inc [])))

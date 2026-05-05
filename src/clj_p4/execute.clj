@@ -16,7 +16,9 @@
   "Apply `f` across `coll` using up to `n` worker threads, preserving
    input order. Falls back to `mapv` for `n <= 1`. The first exception
    thrown by any worker propagates to the caller; partial results are
-   discarded.
+   discarded, and after the first failure subsequent items
+   short-circuit without invoking `f` so a doomed run stops issuing
+   work as quickly as possible.
 
    Backed by `core.async/pipeline-blocking`, which is the idiomatic
    primitive for blocking I/O fan-out: ordered, bounded, and uses one
@@ -25,11 +27,17 @@
   (if (or (nil? n) (<= n 1))
     (mapv f coll)
     (let [err (atom nil)
-          out (a/chan)]
-      (a/pipeline-blocking
-       n out (map f) (a/to-chan! coll)
-       true
-       (fn [t] (compare-and-set! err nil t) nil))
+          in  (a/to-chan! coll)
+          out (a/chan)
+          xf  (map (fn [x]
+                     (if @err
+                       ::skipped
+                       (try (f x)
+                            (catch Throwable t
+                              (compare-and-set! err nil t)
+                              (a/close! in)
+                              ::skipped)))))]
+      (a/pipeline-blocking n out xf in)
       (let [results (a/<!! (a/into [] out))]
         (when-let [t @err] (throw t))
         results))))
