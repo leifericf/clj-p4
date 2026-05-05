@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.0-alpha
+
 Built-in binary filtering. clj-p4 has no Git LFS support, and plain
 Git handles binaries badly — no delta compression, repo bloat, slow
 clones, history-rewrite hazards. Pulling raw binaries out of a
