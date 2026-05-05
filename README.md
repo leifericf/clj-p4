@@ -37,7 +37,9 @@ clj-p4 is strictly P4 to Git. It will never issue a Perforce command that mutate
 | `:source->ref` | Per-source ref override map. Default ref derives from the source's last path segment (`//stream/dev` ⇒ `refs/heads/dev`). |
 | `:ref` | Single-source destination ref. Default `refs/heads/main`. |
 | `:max-changes` | Cap on number of changelists imported. *(`clone!` only.)* |
-| `:exclude` | Vector of `[pattern regex]` filtering files at clone time. |
+| `:exclude-binaries?` | Drop revisions Perforce itself classifies as binary (`:rev/type` ∈ `:binary` / `:apple` / `:resource`). Default `true` — see [Filtering binaries](#filtering-binaries) for why. Set to `false` to import every revision regardless of type. |
+| `:exclude-categories` | `:all` or a set of category keywords (`#{:images :audio :video :models :archives :fonts :documents :compiled :engine-assets}`) selecting from clj-p4's built-in `binaries.edn`. Compiled internally. Mutually exclusive with `:exclude`. Composes with `:exclude-binaries?`. |
+| `:exclude` | Vector of `[pattern regex]` filtering files at clone time (output of `clj-p4.excludes/compile-patterns`). For category-based selection, prefer `:exclude-categories`. |
 | `:fetch-parallelism` | Parallel `p4 print` workers per changelist (`pmap`). |
 | `:max-print-bytes` | Per-file `p4 print` cap; throws `:clj-p4/error :max-print-bytes-exceeded` above. |
 | `:lookahead` | Background `p4 describe` futures prefetching upcoming changelists. |
@@ -131,6 +133,54 @@ clj-p4 is strictly P4 to Git. It will never issue a Perforce command that mutate
 ;; => {:ok? true :commits-checked 10 :files-checked 4321}
 ;; or {:ok? false :divergence {:commit ... :path ... :git-sha ... :p4-sha ...} ...}
 ```
+
+## Filtering binaries
+
+clj-p4 has no Git LFS support, and plain Git handles binaries badly (no delta compression, repo bloat, slow clones, history-rewrite hazards). For most Perforce-to-Git imports of binary-heavy depots — especially game projects with Unreal/Unity assets — the right move is to drop binaries at clone time. Two complementary mechanisms are available:
+
+### Type-based catch-all — `:exclude-binaries?` (default `true`)
+
+Every revision Perforce returns carries a `type` field (`text`, `binary`, `utf8`, `symlink`, `apple`, `resource`, …) — assigned at add time by content sniffing or by the server's [`p4 typemap`](https://help.perforce.com/helix-core/server-apps/cmdref/current/Content/CmdRef/p4_typemap.html). clj-p4 already parses this into `:rev/type`. With `:exclude-binaries?` on (the default), revisions whose type is `:binary`, `:apple`, or `:resource` are dropped — no list of extensions to maintain, and unknown extensions are caught automatically.
+
+Trust the type filter when you want a maintenance-free catch-all. Distrust it (or layer the categorised filter on top) when your depot has files mistyped as `text` because of a buggy typemap or a hand-rolled `-t` override.
+
+```clojure
+(clj-p4/clone! {:conn ... :source "//stream/main" :target "/tmp/main.git"})
+;; default: drops binary/apple/resource revisions
+
+(clj-p4/clone! {:conn ... :source "//stream/main" :target "/tmp/main.git"
+                :exclude-binaries? false})
+;; opt out: import every revision regardless of type
+```
+
+### Categorised extension lists — `:exclude-categories`
+
+A built-in `binaries.edn` ships nine generic categories. Pass `:all` or a subset:
+
+```clojure
+(clj-p4/clone! {... :exclude-categories :all})            ; every category
+(clj-p4/clone! {... :exclude-categories #{:images :audio}}) ; subset
+```
+
+| Category | Examples |
+| --- | --- |
+| `:images` | `*.png` `*.jpg` `*.psd` `*.exr` … |
+| `:audio` | `*.wav` `*.mp3` `*.ogg` `*.flac` … |
+| `:video` | `*.mp4` `*.mov` `*.mkv` `*.bik` … |
+| `:models` | `*.fbx` `*.obj` `*.blend` `*.gltf` … |
+| `:archives` | `*.zip` `*.tar` `*.7z` `*.pak` … |
+| `:fonts` | `*.ttf` `*.otf` `*.woff` … |
+| `:documents` | `*.pdf` `*.doc` `*.xlsx` … |
+| `:compiled` | `*.dll` `*.so` `*.exe` `*.jar` … |
+| `:engine-assets` | `*.uasset` `*.umap` `*.unity` `*.prefab` … |
+
+For finer control, drop down to `clj-p4.excludes/exclude-patterns` directly: `:extra-excludes` adds patterns, `:includes` removes them, and `:resource` lets you swap in your own category map entirely. Compile the result with `clj-p4.excludes/compile-patterns` and pass it as `:exclude` (mutually exclusive with `:exclude-categories`).
+
+### What gets filtered server-side?
+
+Both filters run client-side — but they kick in *before* `p4 print`, which is by far the heaviest call (it transfers the actual file bytes). Excluded revisions cost nothing to fetch. The lighter-weight `p4 changes` and `p4 describe -s` calls are not pattern-filterable in the Perforce protocol, so changelist enumeration and per-CL file metadata still scale with depot size regardless of exclusion settings; clj-p4 minimises this through batching, but it cannot eliminate it.
+
+`p4 integrated` and `p4 fstat` calls, used for integrate-as-merge detection, are skipped for excluded files — so a CL whose integrates are entirely binary asset re-baselines costs zero merge-source RPCs.
 
 ## Safety
 
