@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.2.0-alpha
+
+Second tagged release. Adds boundary validation and parser coercion via
+malli, and replaces the `pmap`-based fan-out with a bounded
+`core.async/pipeline-blocking` helper that actually honours
+`:fetch-parallelism`. Same pre-alpha caveat applies — the public API
+will continue to move; pin a SHA, not a version.
+
 ### Changed
 
 - `clj-p4.parse.semantic` delegates value-level coercion (string→long
