@@ -1,8 +1,8 @@
-(ns clj-p4.parse.semantic
+(ns clj-p4.records
   "Generic record-maps → typed library shapes (`StreamSpec`, `ChangelistRecord`,
    `FileRev`, server-info).
 
-   Input: a string-keyed map as decoded by `clj-p4.parse.marshal` from
+   Input: a string-keyed map as decoded by `clj-p4.marshal` from
    `p4 -G` output. Indexed multi-valued fields appear as separate keys
    (e.g. `\"Paths0\"`, `\"Paths1\"`); helpers here coalesce them.
 
@@ -14,12 +14,12 @@
 
    Value-level coercion (string → long, string → keyword, epoch-seconds
    → epoch-ms, `\"enabled\"` → boolean) is delegated to
-   `clj-p4.schema/record-transformer` via `malli.core/decode`. Helpers
+   `clj-p4.schemas/record-transformer` via `malli.core/decode`. Helpers
    in this namespace handle the *structural* work malli can't express:
    coalescing indexed fields, splitting `Paths:` lines into typed
    tuples, and decomposing the `text+kx` file-type string into
    `:rev/type` / `:rev/flags` / `:rev/keyword-flags`."
-  (:require [clj-p4.schema :as schema]
+  (:require [clj-p4.schemas :as schemas]
             [clojure.string :as str]
             [malli.core :as m]))
 
@@ -65,11 +65,11 @@
 (defn parse-stream-spec
   "Generic record from `p4 stream -o //stream/x` → `StreamSpec`. Value
    coercion (`Type:` string → keyword) is performed by
-   `schema/record-transformer`; this fn handles the structural work."
+   `schemas/record-transformer`; this fn handles the structural work."
   [record]
   (let [opts-str (get record "Options")]
     (m/decode
-     schema/stream-spec
+     schemas/stream-spec
      (cond-> {:stream/name    (get record "Stream")
               :stream/parent  (get record "Parent")
               :stream/type    (get record "Type")
@@ -88,7 +88,7 @@
                                       set))}
        (get record "Update")
        (assoc :stream/updated (get record "Update")))
-     schema/record-transformer)))
+     schemas/record-transformer)))
 
 (def ^:private base-type->kw
   {"text"     :text
@@ -144,12 +144,12 @@
   "Indexed file fields → FileRev. `idx` is the suffix used in describe
    records. Value coercion (string→keyword for `:rev/action`,
    string→long for `:rev/rev` / `:rev/size`) is delegated to
-   `schema/record-transformer`."
+   `schemas/record-transformer`."
   [record idx]
   (let [k      #(get record (str % idx))
         type-m (parse-file-type (k "type"))]
     (m/decode
-     schema/file-rev
+     schemas/file-rev
      (cond-> (merge type-m
                     {:rev/depot  (k "depotFile")
                      :rev/action (k "action")})
@@ -157,7 +157,7 @@
        (k "digest")    (assoc :rev/digest (k "digest"))
        (k "fileSize")  (assoc :rev/size (k "fileSize"))
        (k "movedFile") (assoc :rev/moved-file (k "movedFile")))
-     schema/record-transformer)))
+     schemas/record-transformer)))
 
 (defn- file-indices
   "Indices `n` for which `depotFile<n>` exists in `record`, sorted."
@@ -171,10 +171,10 @@
 (defn parse-changelist
   "Generic record (from `p4 changes -l -G` or similar) → ChangelistRecord
    *without* `:p4/files` (use `parse-describe` for that). Value coercion
-   is delegated to `schema/record-transformer`."
+   is delegated to `schemas/record-transformer`."
   [record]
   (m/decode
-   schema/changelist-record
+   schemas/changelist-record
    (cond-> {:p4/change (get record "change")
             :p4/user   (get record "user")
             :p4/client (get record "client")
@@ -182,7 +182,7 @@
             :p4/status (get record "status")}
      (get record "stream") (assoc :p4/stream (get record "stream"))
      (get record "time")   (assoc :p4/time (get record "time")))
-   schema/record-transformer))
+   schemas/record-transformer))
 
 (defn parse-describe
   "Generic record from `p4 describe -s -G <change>` → ChangelistRecord with
@@ -198,14 +198,14 @@
   (mapv (fn [r]
           (let [type-m (parse-file-type (get r "type"))]
             (m/decode
-             schema/file-rev
+             schemas/file-rev
              (cond-> (merge type-m
                             {:rev/depot  (get r "depotFile")
                              :rev/action (get r "action")})
                (get r "rev")      (assoc :rev/rev    (get r "rev"))
                (get r "digest")   (assoc :rev/digest (get r "digest"))
                (get r "fileSize") (assoc :rev/size   (get r "fileSize")))
-             schema/record-transformer)))
+             schemas/record-transformer)))
         records))
 
 (defn parse-info
@@ -219,7 +219,7 @@
         [_ major minor] (when version
                           (re-find #"(\d{4})\.(\d+)" version))]
     (m/decode
-     schema/server-info
+     schemas/server-info
      (cond-> {:p4/server-version  version
               :p4/server-uptime   (get record "serverUptime")
               :p4/server-address  (get record "serverAddress")
@@ -227,4 +227,4 @@
               :p4/unicode?        (get record "unicode")}
        major (assoc :p4/server-version-major major)
        minor (assoc :p4/server-version-minor minor))
-     schema/record-transformer)))
+     schemas/record-transformer)))

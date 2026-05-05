@@ -1,4 +1,4 @@
-(ns clj-p4.exclude
+(ns clj-p4.excludes
   "Client-side file-pattern filtering, separate from a stream's own
    `:stream/ignored` list. Used to drop binary noise (build artefacts,
    asset binaries, etc.) at clone time. Patterns use a gitignore-flavoured

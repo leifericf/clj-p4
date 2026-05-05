@@ -5,7 +5,11 @@
    A plan is *data*: EDN-printable, deterministic, replayable. Inputs are
    already-resolved (stream chain fetched, changelist range computed,
    excludes given). The pure layer never performs I/O; the host-bound
-   `clj-p4.shell.*` namespaces are responsible for resolving those."
+   `clj-p4.io.*` namespaces are responsible for resolving those.
+
+   Internally, `clone-plan` and `sync-plan` use the Perforce verb 'sync'
+   for the incremental case — the API exposes the same operation as
+   `fetch!`, but inside this layer we stay in P4 vocabulary."
   (:require [clj-p4.view :as view]))
 
 (defn clone-plan
@@ -24,7 +28,7 @@
                      Required path for virtual streams (where P4 has
                      already composed the view server-side).
      :excludes       vector of compiled exclude entries (output of
-                     `clj-p4.exclude/compile-patterns`)
+                     `clj-p4.excludes/compile-patterns`)
      :options        free-form opts map (`:max-changes`, `:checkpoint-every`,
                      `:resume?`)"
   [{:keys [conn stream-chain changelists target view excludes options]}]

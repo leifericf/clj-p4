@@ -1,11 +1,11 @@
-(ns clj-p4.parse.metadata-decoder-test
+(ns clj-p4.metadata-decoder-test
   "Unit coverage for the three metadata-decoding strategies in
-   `clj-p4.parse.marshal/metadata-decoder`. Exercises:
+   `clj-p4.marshal/metadata-decoder`. Exercises:
    - `:strict` → UTF-8 only; throws on bad bytes.
    - `:fallback` → UTF-8 first, then a configurable fallback charset.
    - `:passthrough` → ISO-8859-1; never throws."
   (:require [clojure.test :refer [deftest is testing]]
-            [clj-p4.parse.marshal :as marshal]))
+            [clj-p4.marshal :as marshal]))
 
 (defn- ^bytes b [& xs]
   (byte-array (map unchecked-byte xs)))

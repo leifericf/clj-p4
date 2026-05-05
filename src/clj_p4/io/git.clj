@@ -1,4 +1,4 @@
-(ns clj-p4.shell.git
+(ns clj-p4.io.git
   "Git as a host-bound dependency. Wraps `git init --bare` for repo
    creation and `git fast-import` as a single long-lived subprocess for
    writes — same protocol git-p4 itself uses internally.
@@ -6,7 +6,7 @@
    The `--export-marks=…` + `--import-marks-if-exists=…` pair gives
    resume-on-crash for free: marks file is rewritten at every commit and
    re-loaded on restart."
-  (:require [clj-p4.shell.proc :as proc]
+  (:require [clj-p4.io.subprocess :as proc]
             [clojure.string :as str])
   (:import (java.io OutputStream)))
 

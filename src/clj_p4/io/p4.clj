@@ -1,14 +1,14 @@
-(ns clj-p4.shell.p4
+(ns clj-p4.io.p4
   "One function per `p4` invocation. Each fn returns parsed Clojure data
    (a map or seq of maps) by piping `p4` stdout through
-   `clj-p4.parse.marshal` (or the JSON path on 2024.1+ servers).
+   `clj-p4.marshal` (or the JSON path on 2024.1+ servers).
 
    The connection spec governs `-p`/`-u`/`-c`/`-C` argv assembly. Wire mode
    (`-G` vs `-Mj`) is selectable; auto-detection is the responsibility of
    the orchestration layer (call `info` first, then choose)."
-  (:require [clj-p4.parse.marshal :as marshal]
-            [clj-p4.parse.semantic :as ps]
-            [clj-p4.shell.proc :as proc]
+  (:require [clj-p4.io.subprocess :as proc]
+            [clj-p4.marshal :as marshal]
+            [clj-p4.records :as records]
             [clojure.string :as str])
   (:import (java.io ByteArrayInputStream)))
 
@@ -77,7 +77,7 @@
    any subcommand outside the read-only / metadata-only allowlist.
 
    Honours `:p4/retries` and `:p4/retry-backoff-ms` on the conn for
-   retry-on-transient-failure (see `clj-p4.shell.proc/run!`)."
+   retry-on-transient-failure (see `clj-p4.io.subprocess/run!`)."
   ([conn mode-flag cmd-args]
    (run-p4! conn mode-flag cmd-args nil))
   ([conn mode-flag cmd-args stdin-bytes]
@@ -122,7 +122,7 @@
   (-> (run-p4! conn (with-mode-flag mode) ["info"])
       (->> (decode mode))
       first
-      ps/parse-info))
+      records/parse-info))
 
 (defn stream-spec
   "`p4 stream -o //stream/x` → StreamSpec."
@@ -130,7 +130,7 @@
   (-> (run-p4! conn (with-mode-flag mode) ["stream" "-o" stream-name])
       (->> (decode mode))
       first
-      ps/parse-stream-spec))
+      records/parse-stream-spec))
 
 (defn stream-chain
   "Walk a stream's parent chain via repeated `p4 stream -o`. Returns a
@@ -163,7 +163,7 @@
                              since (str "@>=" since))))]
     (->> (run-p4! conn (with-mode-flag mode) args)
          (decode mode)
-         (mapv ps/parse-changelist))))
+         (mapv records/parse-changelist))))
 
 (defn- head-change
   "Highest committed changelist number on the server. Uses `p4 counter
@@ -206,7 +206,7 @@
                 recs (->> (run-p4! conn (with-mode-flag mode)
                                    ["changes" "-l" arg])
                           (decode mode)
-                          (mapv ps/parse-changelist))]
+                          (mapv records/parse-changelist))]
             (recur (inc hi) (into acc recs))))))))
 
 (defn labels
@@ -263,7 +263,7 @@
                ["describe" "-s" (str change)])
       (->> (decode mode))
       first
-      ps/parse-describe))
+      records/parse-describe))
 
 (defn- parse-rev
   "Parse a Perforce rev value (e.g. `\"#2\"`, `\"2\"`, `\"#none\"`, `nil`)

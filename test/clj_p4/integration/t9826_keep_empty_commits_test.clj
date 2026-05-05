@@ -16,10 +16,10 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.java.io :as io]
             [clj-p4.api :as api]
-            [clj-p4.exclude :as exclude]
+            [clj-p4.excludes :as excludes]
             [clj-p4.integration.fixture :as fix]
             [clj-p4.integration.git-assert :as ga]
-            [clj-p4.shell.git :as git]))
+            [clj-p4.io.git :as git]))
 
 (use-fixtures :once
   (fn [f] (when (fix/integration-enabled?) (fix/with-p4d f))))
@@ -35,8 +35,8 @@
         baseline  (str (io/file base "baseline.git"))
         skipped   (str (io/file base "skipped.git"))
         kept      (str (io/file base "kept.git"))
-        excludes  (exclude/compile-patterns
-                   (exclude/exclude-patterns
+        excludes  (excludes/compile-patterns
+                   (excludes/exclude-patterns
                     {:no-default-excludes? true
                      :extra-excludes ["src/oddly named/"]}))]
     ;; Baseline: no exclusion. All CLs land.

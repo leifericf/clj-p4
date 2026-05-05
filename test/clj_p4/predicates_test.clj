@@ -1,9 +1,9 @@
-(ns clj-p4.spec-test
+(ns clj-p4.predicates-test
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :as prop]
-            [clj-p4.spec :as spec]))
+            [clj-p4.predicates :as spec]))
 
 (deftest depot-path?-test
   (testing "valid depot paths"

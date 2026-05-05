@@ -1,6 +1,6 @@
-(ns clj-p4.parse.depot-path-test
+(ns clj-p4.depot-path-test
   (:require [clojure.test :refer [deftest is testing]]
-            [clj-p4.parse.depot-path :as dp]))
+            [clj-p4.depot-path :as dp]))
 
 (deftest unescape-decodes-known-p4-reserved-chars
   (testing "the four documented reserved characters round-trip"

@@ -1,13 +1,13 @@
-(ns clj-p4.execute
+(ns clj-p4.runner
   "Reduce a `clj-p4.plan` op-seq into a populated bare git repo.
 
    This is the only mutable layer. Every other namespace returns plain
    data; `execute!` is where blobs hit disk and commits become refs."
-  (:require [clj-p4.exclude :as exclude]
-            [clj-p4.parse.depot-path :as depot-path]
+  (:require [clj-p4.depot-path :as depot-path]
+            [clj-p4.excludes :as excludes]
+            [clj-p4.io.git :as git]
+            [clj-p4.io.p4 :as p4]
             [clj-p4.plan :as plan]
-            [clj-p4.shell.git :as git]
-            [clj-p4.shell.p4 :as p4]
             [clj-p4.view :as view]
             [clojure.core.async :as a]
             [clojure.string :as str])
@@ -60,14 +60,14 @@
 
 (defn- keyword-expand?
   "True if `p4 print` should let the server expand RCS keywords; false to
-   pass `-k` so bytes round-trip unchanged on subsequent syncs."
+   pass `-k` so bytes round-trip unchanged on subsequent fetches."
   [{:rev/keys [keyword-flags]}]
   (not (or (contains? keyword-flags :k)
            (contains? keyword-flags :ko))))
 
 (defn- excluded-by-policy?
   [excludes local-path]
-  (and (seq excludes) (exclude/matches-any? excludes local-path)))
+  (and (seq excludes) (excludes/matches-any? excludes local-path)))
 
 (defn- map-rev->local
   "Return the local path for a FileRev, or `nil` if the file is filtered

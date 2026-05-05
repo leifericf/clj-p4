@@ -2,7 +2,7 @@
   "Mirror of git-p4's `t/t9810-git-p4-rcs.sh` (read side): files of type
    `text+k` and `text+ko` keep their RCS keyword markers literal in the
    imported tree, instead of carrying the server's per-checkout
-   expansion (`$Id: //... $`). Verifies that `clj-p4.execute`'s
+   expansion (`$Id: //... $`). Verifies that `clj-p4.runner`'s
    `keyword-expand?` correctly passes `-k` to `p4 print` for these
    filetypes — without that, blob SHAs would shift on every sync."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]

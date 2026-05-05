@@ -1,4 +1,4 @@
-(ns clj-p4.parse.depot-path
+(ns clj-p4.depot-path
   "Depot-path canonicalisation. Perforce escapes `@`, `#`, `*`, and `%`
    in stored depot paths as `%40`, `%23`, `%2A`, and `%25`. `p4 -G fstat`
    and `p4 describe` return paths in this escaped form; this namespace
@@ -7,7 +7,7 @@
 
    The depot side stays escaped — `p4 print //depot/foo%40bar.txt` is the
    canonical query form — so this decode is applied only at the local-path
-   boundary in `clj-p4.execute`, never to `:rev/depot`."
+   boundary in `clj-p4.runner`, never to `:rev/depot`."
   (:require [clojure.string :as str]))
 
 (def ^:private escape-re

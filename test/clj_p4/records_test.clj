@@ -1,6 +1,6 @@
-(ns clj-p4.parse.semantic-test
+(ns clj-p4.records-test
   (:require [clojure.test :refer [deftest is testing]]
-            [clj-p4.parse.semantic :as ps]))
+            [clj-p4.records :as ps]))
 
 (deftest parse-stream-spec-test
   (let [record {"Stream"     "//stream/main"

@@ -3,9 +3,9 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clj-p4.api :as api]
-            [clj-p4.shell.git :as git]
-            [clj-p4.shell.p4 :as p4]
-            [clj-p4.shell.proc :as proc]))
+            [clj-p4.io.git :as git]
+            [clj-p4.io.p4 :as p4]
+            [clj-p4.io.subprocess :as proc]))
 
 ;; The 0.12.0 ephemeral-first dispatch tries `create-stream-client!`
 ;; before any path that used to be `clone-direct!`. Force that creation
@@ -356,7 +356,7 @@
 
 (deftest excludes-applied-test
   (let [d  (tmp-dir)
-        ex (clj-p4.exclude/compile-patterns ["*.bin"])
+        ex (clj-p4.excludes/compile-patterns ["*.bin"])
         cl-with-bin
         {:p4/change 100 :p4/user "x" :p4/time 0 :p4/desc "with-bin"
          :p4/stream "//stream/main"
@@ -1126,12 +1126,12 @@
                  (catch clojure.lang.ExceptionInfo e e))]
       (is (= :invalid-options (:clj-p4/error (ex-data e)))))))
 
-(deftest sync!-rejects-malformed-options-at-boundary-test
+(deftest fetch!-rejects-malformed-options-at-boundary-test
   (testing ":since must be a positive number when present"
-    (let [e (try (api/sync! {:conn   {:p4/port "h:1666"}
+    (let [e (try (api/fetch! {:conn   {:p4/port "h:1666"}
                              :target "/tmp/x"
                              :source "//s/main"
                              :since  -5})
                  (catch clojure.lang.ExceptionInfo e e))]
       (is (= :invalid-options (:clj-p4/error (ex-data e))))
-      (is (= "sync!" (:op (ex-data e)))))))
+      (is (= "fetch!" (:op (ex-data e)))))))

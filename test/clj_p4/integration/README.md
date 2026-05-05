@@ -36,7 +36,7 @@ is read-only) are skipped.
 | t9803 | implemented | shell-metachar filenames |
 | t9804 | N/A: write-direction | label *export* (`git p4 submit`-side) — out of scope |
 | t9805 | N/A: write-direction | `--skip-submit-edit` |
-| t9806 | N/A: architecture | git-p4 CLI option handling — clj-p4 has a malli-validated options map (`api-test`, `schema-test`) |
+| t9806 | N/A: architecture | git-p4 CLI option handling — clj-p4 has a malli-validated options map (`api-test`, `schemas-test`) |
 | t9807 | N/A: write-direction | `git p4 submit` |
 | t9808 | N/A: architecture | `--chdir` CLI flag |
 | t9809 | N/A: architecture | `--use-client-spec` — clj-p4 always synthesises ephemeral clients |

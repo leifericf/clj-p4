@@ -2,7 +2,7 @@
   "Git-side assertion helpers shared across the t98xx integration ports.
    Wraps `git ls-tree`, `git cat-file`, and a temp-dir factory so each
    test ns can stay focused on the scenario it's exercising."
-  (:require [clj-p4.shell.proc :as proc]
+  (:require [clj-p4.io.subprocess :as proc]
             [clojure.string :as str])
   (:import (java.nio.file Files)
            (java.nio.file.attribute FileAttribute)))

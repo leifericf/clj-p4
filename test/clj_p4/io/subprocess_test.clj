@@ -1,7 +1,7 @@
-(ns clj-p4.shell.proc-test
+(ns clj-p4.io.subprocess-test
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.string :as str]
-            [clj-p4.shell.proc :as proc]))
+            [clj-p4.io.subprocess :as proc]))
 
 (deftest run!-basic-test
   (let [{:keys [exit stdout-bytes stderr]} (proc/run! ["echo" "hello"])]

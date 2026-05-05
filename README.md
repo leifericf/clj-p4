@@ -13,10 +13,10 @@ clj-p4 is strictly P4 to Git. It will never issue a Perforce command that mutate
 | `clj-p4.api/available?` | Returns true if `p4` is on `PATH` and runs. |
 | `clj-p4.api/clone?` | Returns true if a target directory looks like a clj-p4 clone. |
 | `clj-p4.api/clone!` | Clone one or more sources into a fresh bare repo. |
-| `clj-p4.api/sync!` | Bring an existing clj-p4 clone up to date with new changelists. |
+| `clj-p4.api/fetch!` | Pull new changelists from the depot and append them to an existing clone. Append-only, no merge, no submit-back — semantically `git fetch`, not `git pull`. |
 | `clj-p4.api/repo-state` | Returns `{:target :head-sha :commit-count :last-change}` for an existing clone. |
-| `clj-p4.validate/validate-tip` | Compare the git tip's count and total bytes against `p4 sizes` at the matching changelist. |
-| `clj-p4.validate/validate-deep!` | Byte-level compare of a sampled subset of commits against `p4 print -k`. |
+| `clj-p4.audit/audit-tip` | Compare the git tip's count and total bytes against `p4 sizes` at the matching changelist. |
+| `clj-p4.audit/audit-deep!` | Byte-level compare of a sampled subset of commits against `p4 print -k`. |
 
 ### Source types
 
@@ -26,7 +26,7 @@ clj-p4 is strictly P4 to Git. It will never issue a Perforce command that mutate
 | Virtual / task / sparsedev / sparserel streams | auto-managed locked-down ephemeral client |
 | Classic non-stream depot paths | auto-managed ephemeral client |
 
-### `clone!` and `sync!` options
+### `clone!` and `fetch!` options
 
 | Option | Effect |
 | --- | --- |
@@ -64,7 +64,7 @@ clj-p4 is strictly P4 to Git. It will never issue a Perforce command that mutate
 | `:p4/retries` | Retries on transient network or server failure. |
 | `:p4/retry-backoff-ms` | Backoff between retries. |
 
-### `validate-tip` and `validate-deep!` options
+### `audit-tip` and `audit-deep!` options
 
 | Option | Effect |
 | --- | --- |
@@ -72,18 +72,18 @@ clj-p4 is strictly P4 to Git. It will never issue a Perforce command that mutate
 | `:target` | Existing clj-p4 clone. Required. |
 | `:source` | Depot path the clone was made from. Required. |
 | `:ref` | Branch to validate. Default `refs/heads/main`. |
-| `:sample` | Number of commits to sample, or `:all`. Default `10`. *(`validate-deep!` only.)* |
+| `:sample` | Number of commits to sample, or `:all`. Default `10`. *(`audit-deep!` only.)* |
 
 ### Output
 
 | Artefact | Notes |
 | --- | --- |
 | Commit trailer | `[git-p4: depot-paths = "<source>/": change = N]` on every commit. |
-| Marks file | `<target>/clj-p4.marks` survives across runs; `sync!` reads it to know where to resume. |
+| Marks file | `<target>/clj-p4.marks` survives across runs; `fetch!` reads it to know where to resume. |
 | Move pairs | Emitted as fast-import `R old new` followed by an `M` op so move + edit in the same changelist preserves content. |
 | Integrate-as-merge | When a strict majority of integrate files in a changelist share one source change, the commit gains that source as a 2nd parent. |
 | Wire format | `-Mj -ztag` (JSON) on Perforce server `≥ 2024.1`, falling back to `-G` (Python marshal) on older servers. Selected automatically. |
-| Existing target | `clone!` refuses to overlay a non-empty target. Call `sync!` instead, or remove the target first. |
+| Existing target | `clone!` refuses to overlay a non-empty target. Call `fetch!` instead, or remove the target first. |
 
 ## Quick start
 
@@ -116,17 +116,18 @@ clj-p4 is strictly P4 to Git. It will never issue a Perforce command that mutate
 ;; refs/heads/main and refs/heads/dev share a marks file, so
 ;; integrate-as-merge parents cross stream boundaries.
 
-;; Resume after upstream changes.
-(clj-p4/sync! {:conn ... :source "//stream/main" :target "/tmp/main.git"})
+;; Resume after upstream changes. Append-only — semantically `git fetch`,
+;; not `git pull`. Talks to the configured Perforce depot, not a git remote.
+(clj-p4/fetch! {:conn ... :source "//stream/main" :target "/tmp/main.git"})
 
 ;; Sanity-check at tip (cheap).
-(require '[clj-p4.validate :as v])
-(v/validate-tip {:conn ... :target "/tmp/main.git" :source "//stream/main"})
+(require '[clj-p4.audit :as a])
+(a/audit-tip {:conn ... :target "/tmp/main.git" :source "//stream/main"})
 ;; => {:ok? true :change 12345 :git {...} :p4 {...}}
 
-;; Byte-level deep validate. Expensive; sample a subset of commits.
-(v/validate-deep! {:conn ... :target "/tmp/main.git" :source "//stream/main"
-                   :sample 10})
+;; Byte-level deep audit. Expensive; sample a subset of commits.
+(a/audit-deep! {:conn ... :target "/tmp/main.git" :source "//stream/main"
+                :sample 10})
 ;; => {:ok? true :commits-checked 10 :files-checked 4321}
 ;; or {:ok? false :divergence {:commit ... :path ... :git-sha ... :p4-sha ...} ...}
 ```
@@ -151,6 +152,12 @@ Every `p4` invocation also passes through a runtime allowlist. Anything else thr
 | `client -o` / `-i` / `-d` / `-d -f` | Metadata-only writes. Required to create the ephemeral client used for virtual streams and classic-depot clones; `-d -f` force-deletes the import-locked client on cleanup. Never touches depot file state. |
 
 Ephemeral clients are created with `Options: noallwrite noclobber locked`, so the server refuses any depot-mutating operation routed through them. The client root is a scratch path under `/tmp/clj-p4-eph-<uuid>`. Each client is deleted in a `finally` block, whether the run succeeds or fails. `client -i` and `client -d` are the only allowed metadata writes; they modify a server-side client spec, not depot files.
+
+## Naming conventions
+
+Vocabulary in this codebase follows a gradient: Git terms closer to the user/API, Perforce terms closer to the Perforce side, neutral terms in the middle. The public API speaks Git (`clone!`, `fetch!`, `:head-sha`, `:commit-count`) because the people using clj-p4 are git-users importing from Perforce — that's the language they already think in. The Perforce-side internals (`clj-p4.io.p4`, `clj-p4.marshal`, `clj-p4.records`, `clj-p4.view`, `clj-p4.depot-path`) speak Perforce — `marshal` is the wire format p4 calls it; `view` is the P4 word for a depot-to-local mapping spec; `:last-change` is a P4 changelist number, not a git commit. The middle layers (`clj-p4.plan`, `clj-p4.runner`, `clj-p4.audit`, `clj-p4.schemas`, `clj-p4.predicates`, `clj-p4.excludes`, `clj-p4.io.subprocess`) use neutral Clojure-idiomatic names because forcing either side's vocabulary onto generic plumbing makes it harder, not easier, to read.
+
+A consequence: the API exposes `fetch!` while the internal plan-builder is called `sync-plan`. That is intentional — `p4 sync` is the P4 verb for "bring a workspace up to date with the depot," and the plan layer sits closer to the P4 side. The same operation crosses the boundary, but each side names it in its native vocabulary.
 
 ## Inspiration
 

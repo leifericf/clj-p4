@@ -1,4 +1,4 @@
-(ns clj-p4.shell.proc
+(ns clj-p4.io.subprocess
   "Subprocess invocation. Bytes in, bytes out — no domain knowledge.
 
    Two shapes:

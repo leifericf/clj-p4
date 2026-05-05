@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+## 0.4.0-alpha
+
+Vocabulary alignment + structural cleanup. The codebase now follows a
+deliberate gradient: Git terms at the public API, Perforce terms on the
+P4-side internals, neutral terms in the middle. The directory layout
+flattens the topical `parse/` sub-dir, renames `shell/` to `io/` (the
+Clojure-idiomatic name for the I/O boundary), and gives every namespace
+a noun-shaped name. No backwards-compatibility shims — pin the previous
+tag if you need the old names.
+
+### Breaking
+
+- **`sync!` is now `fetch!`** at the public API. Semantics are
+  unchanged (incremental, append-only history pull from the depot — no
+  merge, no working tree, no submit-back). The new name matches `git
+  fetch` more accurately and avoids collision with `p4 sync`. The
+  result key `:synced N` is now `:fetched N`. The starting point is
+  still the `[git-p4: ... change = N]` trailer on the most recent
+  commit reachable from `ref`.
+- **`clj-p4.validate` → `clj-p4.audit`** with `validate-tip` →
+  `audit-tip` and `validate-deep!` → `audit-deep!`. Behaviour
+  unchanged.
+- **Namespace renames** (file paths follow):
+  | Old | New |
+  | --- | --- |
+  | `clj-p4.execute` | `clj-p4.runner` |
+  | `clj-p4.validate` | `clj-p4.audit` |
+  | `clj-p4.exclude` | `clj-p4.excludes` |
+  | `clj-p4.schema` | `clj-p4.schemas` |
+  | `clj-p4.spec` | `clj-p4.predicates` |
+  | `clj-p4.parse.marshal` | `clj-p4.marshal` |
+  | `clj-p4.parse.semantic` | `clj-p4.records` |
+  | `clj-p4.parse.depot-path` | `clj-p4.depot-path` |
+  | `clj-p4.shell.proc` | `clj-p4.io.subprocess` |
+  | `clj-p4.shell.p4` | `clj-p4.io.p4` |
+  | `clj-p4.shell.git` | `clj-p4.io.git` |
+  Unchanged: `clj-p4.api`, `clj-p4.plan`, `clj-p4.view`.
+- `clj-p4.schemas/sync-options` → `clj-p4.schemas/fetch-options`.
+
+### Changed
+
+- README has a new "Naming conventions" section explaining the gradient
+  (Git ↔ neutral ↔ Perforce) and why the API exposes `fetch!` while the
+  internal plan-builder is still called `sync-plan`.
+
 ## 0.3.0-alpha
 
 Third tagged release. Closes the read-side `t98xx` port roadmap from

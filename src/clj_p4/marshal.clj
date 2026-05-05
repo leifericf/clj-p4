@@ -1,4 +1,4 @@
-(ns clj-p4.parse.marshal
+(ns clj-p4.marshal
   "Decode p4's structured wire formats into generic Clojure record-maps.
 
    Two paths:
@@ -6,7 +6,7 @@
    - `decode-json-records`     — line-delimited JSON of `p4 -Mj` (server ≥ 2024.1).
 
    Both produce a lazy seq of string-keyed Clojure maps, ready for
-   `clj-p4.parse.semantic`. JSON path uses `clojure.data.json`; the
+   `clj-p4.records`. JSON path uses `clojure.data.json`; the
    marshal path is a hand-rolled byte decoder."
   (:require [clojure.data.json :as json]
             [clojure.java.io :as io]
@@ -94,7 +94,7 @@
   "The currently-bound `(fn [bytes] String)` used by `decode-value` to
    turn marshal byte payloads into strings. Default is the strict
    UTF-8 decoder, matching the importer's default behaviour for
-   unicode-mode servers. Bound by `clj-p4.api/clone!` (and `sync!`)
+   unicode-mode servers. Bound by `clj-p4.api/clone!` (and `fetch!`)
    when the caller passes `:metadata-decoding-strategy`."
   (metadata-decoder :strict))
 

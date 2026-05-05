@@ -1,10 +1,10 @@
-(ns clj-p4.validate-test
+(ns clj-p4.audit-test
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clj-p4.api :as api]
-            [clj-p4.shell.p4 :as p4]
-            [clj-p4.validate :as validate]))
+            [clj-p4.io.p4 :as p4]
+            [clj-p4.audit :as audit]))
 
 ;; See clj-p4.api-test: 0.12.0 routes streams through ephemeral
 ;; clients by default. Force the create to fail so the pure-data
@@ -38,8 +38,8 @@
 (def ^:private info-2024
   {:p4/server-version-major 2024 :p4/server-version-minor 1})
 
-(deftest validate-tip-agreement-test
-  (testing "validate-tip flags ok? true when git tree count + bytes match p4"
+(deftest audit-tip-agreement-test
+  (testing "audit-tip flags ok? true when git tree count + bytes match p4"
     (let [d (tmp-dir)
           target (str (io/file d "repo"))
           file-bytes (.getBytes "x" "UTF-8")
@@ -62,7 +62,7 @@
         (with-redefs [p4/sizes-summary (fn [_ _ & _]
                                          {:p4/file-count 1
                                           :p4/total-bytes 1})]
-          (let [result (validate/validate-tip
+          (let [result (audit/audit-tip
                         {:conn   {:p4/port "h:1666"}
                          :target target
                          :source "//stream/main"})]
@@ -72,8 +72,8 @@
             (is (= 1 (-> result :p4  :p4/file-count)))))
         (finally (rm-rf d))))))
 
-(deftest validate-deep-agreement-test
-  (testing "validate-deep! returns ok? true when every file matches"
+(deftest audit-deep-agreement-test
+  (testing "audit-deep! returns ok? true when every file matches"
     (let [d (tmp-dir)
           target (str (io/file d "repo"))
           file-bytes (.getBytes "x" "UTF-8")
@@ -98,7 +98,7 @@
         (with-redefs [p4/print-bytes! (fn [_ _ out & _]
                                         (.write ^java.io.OutputStream out
                                                 file-bytes))]
-          (let [result (validate/validate-deep!
+          (let [result (audit/audit-deep!
                         {:conn   {:p4/port "h:1666"}
                          :target target
                          :source "//stream/main"
@@ -108,8 +108,8 @@
             (is (= 1 (:files-checked result)))))
         (finally (rm-rf d))))))
 
-(deftest validate-deep-divergence-test
-  (testing "validate-deep! returns first-divergence detail when bytes mismatch"
+(deftest audit-deep-divergence-test
+  (testing "audit-deep! returns first-divergence detail when bytes mismatch"
     (let [d (tmp-dir)
           target (str (io/file d "repo"))
           orig-bytes (.getBytes "ORIGINAL" "UTF-8")
@@ -135,7 +135,7 @@
         (with-redefs [p4/print-bytes! (fn [_ _ out & _]
                                         (.write ^java.io.OutputStream out
                                                 tampered-bytes))]
-          (let [result (validate/validate-deep!
+          (let [result (audit/audit-deep!
                         {:conn   {:p4/port "h:1666"}
                          :target target
                          :source "//stream/main"
@@ -150,8 +150,8 @@
                         (-> result :divergence :p4-sha))))))
         (finally (rm-rf d))))))
 
-(deftest validate-tip-disagreement-test
-  (testing "validate-tip flags ok? false when sizes disagree"
+(deftest audit-tip-disagreement-test
+  (testing "audit-tip flags ok? false when sizes disagree"
     (let [d (tmp-dir)
           target (str (io/file d "repo"))
           cl {:p4/change 100 :p4/user "x" :p4/time 0 :p4/desc "one"
@@ -173,7 +173,7 @@
         (with-redefs [p4/sizes-summary (fn [_ _ & _]
                                          {:p4/file-count 7    ; lies
                                           :p4/total-bytes 999})]
-          (let [result (validate/validate-tip
+          (let [result (audit/audit-tip
                         {:conn   {:p4/port "h:1666"}
                          :target target
                          :source "//stream/main"})]

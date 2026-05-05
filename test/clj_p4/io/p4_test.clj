@@ -1,7 +1,7 @@
-(ns clj-p4.shell.p4-test
+(ns clj-p4.io.p4-test
   (:require [clojure.test :refer [deftest is testing]]
-            [clj-p4.shell.p4 :as p4]
-            [clj-p4.shell.proc :as proc])
+            [clj-p4.io.p4 :as p4]
+            [clj-p4.io.subprocess :as proc])
   (:import (java.io ByteArrayOutputStream
                     DataOutputStream)))
 

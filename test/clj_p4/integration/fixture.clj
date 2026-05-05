@@ -6,7 +6,7 @@
    - `docker compose` available on PATH
    - Project layout: this file at `test/clj_p4/integration/`, fixture at
      `test/fixtures/p4d/`."
-  (:require [clj-p4.shell.proc :as proc]
+  (:require [clj-p4.io.subprocess :as proc]
             [clojure.java.io :as io]))
 
 (def ^:private fixture-dir

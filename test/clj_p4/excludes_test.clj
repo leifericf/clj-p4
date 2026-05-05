@@ -1,6 +1,6 @@
-(ns clj-p4.exclude-test
+(ns clj-p4.excludes-test
   (:require [clojure.test :refer [deftest is testing]]
-            [clj-p4.exclude :as ex]))
+            [clj-p4.excludes :as ex]))
 
 (deftest exclude-patterns-test
   (testing "resource patterns plus extras"

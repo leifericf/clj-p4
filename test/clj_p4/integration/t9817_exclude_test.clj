@@ -6,7 +6,7 @@
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.java.io :as io]
             [clj-p4.api :as api]
-            [clj-p4.exclude :as exclude]
+            [clj-p4.excludes :as excludes]
             [clj-p4.integration.fixture :as fix]
             [clj-p4.integration.git-assert :as ga]))
 
@@ -21,8 +21,8 @@
         base-dir  (ga/tmp-dir "clj-p4-t9817")
         without   (str (io/file base-dir "without.git"))
         with      (str (io/file base-dir "with.git"))
-        compiled  (exclude/compile-patterns
-                   (exclude/exclude-patterns
+        compiled  (excludes/compile-patterns
+                   (excludes/exclude-patterns
                     {:no-default-excludes? true
                      :extra-excludes ["src/oddly named/"]}))]
     (api/clone! {:conn conn :source "//stream/main" :target without})

@@ -1,17 +1,17 @@
 (ns clj-p4.concurrency-test
-  "Tests for the private `bounded-pmap` helper in `clj-p4.execute`.
+  "Tests for the private `bounded-pmap` helper in `clj-p4.runner`.
 
    The helper is the load-bearing replacement for `pmap` at the two
    parallel-fetch sites; these tests pin its three guarantees: order
    preservation, first-exception propagation, and concurrency cap."
-  (:require [clj-p4.execute]
+  (:require [clj-p4.runner]
             [clojure.test :refer [deftest is testing]])
   (:import (java.util.concurrent CountDownLatch TimeUnit)
            (java.util.concurrent.atomic AtomicInteger)))
 
 (def ^:private bounded-pmap
   "Reach the private helper via its var so tests don't bend the public API."
-  #'clj-p4.execute/bounded-pmap)
+  #'clj-p4.runner/bounded-pmap)
 
 (deftest sequential-fallback-test
   (testing "n is nil → mapv (sequential)"

@@ -6,8 +6,8 @@
             [clojure.java.io :as io]
             [clj-p4.api :as api]
             [clj-p4.integration.fixture :as fix]
-            [clj-p4.shell.git :as git]
-            [clj-p4.shell.proc :as proc]))
+            [clj-p4.io.git :as git]
+            [clj-p4.io.subprocess :as proc]))
 
 (use-fixtures :once
   (fn [f]
@@ -59,6 +59,6 @@
            "p4 -c clj_p4_seed_main -u admin -P admin1234 submit -d 't9800-sync-extra'")]
      {:timeout-ms 60000})
 
-    (let [sync-result (api/sync! {:conn conn :source "//stream/main"
+    (let [fetch-result (api/fetch! {:conn conn :source "//stream/main"
                                   :target target})]
-      (is (= (inc before-commits) (:commit-count sync-result))))))
+      (is (= (inc before-commits) (:commit-count fetch-result))))))

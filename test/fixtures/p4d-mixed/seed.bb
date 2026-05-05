@@ -2,7 +2,7 @@
 ;; Seed the non-unicode p4d with a depot whose changelist descriptions
 ;; deliberately contain CP-1252 / Latin-1 byte sequences. Used by
 ;; `t9835_metadata_encoding_test` to exercise the three decoding
-;; strategies in `clj-p4.parse.marshal/metadata-decoder`.
+;; strategies in `clj-p4.marshal/metadata-decoder`.
 (ns seed
   (:require [babashka.fs :as fs]
             [babashka.process :as proc]

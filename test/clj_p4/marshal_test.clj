@@ -1,6 +1,6 @@
-(ns clj-p4.parse.marshal-test
+(ns clj-p4.marshal-test
   (:require [clojure.test :refer [deftest is testing]]
-            [clj-p4.parse.marshal :as m])
+            [clj-p4.marshal :as m])
   (:import (java.io ByteArrayInputStream
                     ByteArrayOutputStream
                     DataOutputStream)))

@@ -1,4 +1,4 @@
-(ns clj-p4.spec
+(ns clj-p4.predicates
   "Predicates and validators on the library's data shapes.
 
    Pure: no I/O. The shapes themselves are documented in the project

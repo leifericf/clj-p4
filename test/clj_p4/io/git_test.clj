@@ -1,9 +1,9 @@
-(ns clj-p4.shell.git-test
+(ns clj-p4.io.git-test
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.java.io :as io]
             [clojure.string :as str]
-            [clj-p4.shell.git :as git]
-            [clj-p4.shell.proc :as proc]))
+            [clj-p4.io.git :as git]
+            [clj-p4.io.subprocess :as proc]))
 
 (defn- tmp-dir []
   (let [d (java.nio.file.Files/createTempDirectory

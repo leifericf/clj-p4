@@ -1,8 +1,8 @@
-(ns clj-p4.schema-test
-  "Pin the malli schemas in `clj-p4.schema`. Two-part: structural
+(ns clj-p4.schemas-test
+  "Pin the malli schemas in `clj-p4.schemas`. Two-part: structural
    conformance against representative records, and decode-from-wire
    tests against representative string-shaped inputs."
-  (:require [clj-p4.schema :as s]
+  (:require [clj-p4.schemas :as s]
             [clojure.test :refer [deftest is testing]]
             [malli.core :as m]
             [malli.error :as me]))
@@ -269,14 +269,14 @@
                           :source "//s/main"
                           :fetch-parallelism 0})))))
 
-(deftest sync-options-test
+(deftest fetch-options-test
   (testing ":since accepts a positive change number or nil"
-    (is (m/validate s/sync-options
+    (is (m/validate s/fetch-options
                     {:conn   {:p4/port "localhost:1666"}
                      :target "/tmp/r"
                      :source "//s/main"
                      :since  100}))
-    (is (m/validate s/sync-options
+    (is (m/validate s/fetch-options
                     {:conn   {:p4/port "localhost:1666"}
                      :target "/tmp/r"
                      :source "//s/main"

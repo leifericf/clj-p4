@@ -1,18 +1,18 @@
-(ns clj-p4.schema
+(ns clj-p4.schemas
   "Malli schemas for clj-p4 domain records, public API options, and the
    wire-format coercion applied when parsing p4 output.
 
    Two consumers:
-   - `clj-p4.api` — boundary validation of `clone!` / `sync!` options,
+   - `clj-p4.api` — boundary validation of `clone!` / `fetch!` options,
      with `malli.error/humanize`d messages on rejection.
-   - `clj-p4.parse.semantic` — declarative coercion via `m/decode` and
+   - `clj-p4.records` — declarative coercion via `m/decode` and
      `record-transformer`, replacing manual `parse-long` /
      keyword-table conversion in the parser.
 
-   Distinct from `clj-p4.spec`, which holds hand-rolled domain
+   Distinct from `clj-p4.predicates`, which holds hand-rolled domain
    predicates (`depot-path?`, `parse-depot-path`); the two are
    complementary and intentionally not merged."
-  (:require [clj-p4.spec :as spec]
+  (:require [clj-p4.predicates :as predicates]
             [clojure.string :as str]
             [malli.core :as m]
             [malli.transform :as mt]))
@@ -95,10 +95,10 @@
   [:enum :share :isolate :import :import+ :exclude])
 
 (def depot-path
-  "P4 depot path, validated by the existing `clj-p4.spec/depot-path?`
+  "P4 depot path, validated by the existing `clj-p4.predicates/depot-path?`
    predicate to keep the regex grammar in one place."
   [:fn {:error/message "should be a P4 depot path (//depot/...)"}
-   spec/depot-path?])
+   predicates/depot-path?])
 
 (def file-coercible
   "Anything `clojure.java.io/file` can handle once stringified — the
@@ -197,13 +197,13 @@
    [:email {:optional true} [:maybe string?]]])
 
 (def ^:private positive-number
-  "Any positive number — matches the older `clj-p4.spec/connection-spec?`
+  "Any positive number — matches the older `clj-p4.predicates/connection-spec?`
    contract, which accepts doubles too (JSON sources often produce
    them). Use this where a timeout / backoff is expressed in ms."
   [:and number? pos?])
 
 (def connection-spec
-  "Per `clj-p4.spec/connection-spec?`, plus the retry/timeout knobs that
+  "Per `clj-p4.predicates/connection-spec?`, plus the retry/timeout knobs that
    live on the conn map but the older predicate didn't cover."
   [:map {:closed false}
    [:p4/port string?]
@@ -218,8 +218,8 @@
 ;; ---------------- Public API options ----------------
 
 (def ^:private common-fields
-  "Fields shared by clone! and sync!. The schemas for clone-options /
-   sync-options inline these so error messages point at the operation
+  "Fields shared by clone! and fetch!. The schemas for clone-options /
+   fetch-options inline these so error messages point at the operation
    the caller actually invoked."
   [[:conn connection-spec]
    [:target file-coercible]
@@ -249,8 +249,8 @@
    the boundary throw already covers it with a clearer message."
   (into [:map {:closed false}] common-fields))
 
-(def sync-options
-  "`sync!` options — same shape as `clone-options` plus an optional
+(def fetch-options
+  "`fetch!` options — same shape as `clone-options` plus an optional
    `:since` change-number override."
   (into [:map {:closed false}]
         (conj common-fields
@@ -259,7 +259,7 @@
 ;; ---------------- Wire-format coercion transformer ----------------
 
 (def record-transformer
-  "Used by `clj-p4.parse.semantic` when decoding wire-format string
+  "Used by `clj-p4.records` when decoding wire-format string
    values into typed library shapes. Composition of
    `mt/string-transformer` (string→long, string→keyword for enums) and
    the schema-local `:decode/string` properties defined above."

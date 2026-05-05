@@ -1,16 +1,16 @@
 (ns clj-p4.api
-  "Public facade: `clone!`, `sync!`, `repo-state`, `available?`, `clone?`.
+  "Public facade: `clone!`, `fetch!`, `repo-state`, `available?`, `clone?`.
 
    Each takes the data it needs explicitly — no opts god-map. Side effects
-   delegated to `clj-p4.shell.*`; orchestration delegated to
-   `clj-p4.execute`."
-  (:require [clj-p4.execute :as execute]
-            [clj-p4.parse.marshal :as marshal]
+   delegated to `clj-p4.io.*`; orchestration delegated to
+   `clj-p4.runner`."
+  (:require [clj-p4.io.git :as git]
+            [clj-p4.io.p4 :as p4]
+            [clj-p4.io.subprocess :as proc]
+            [clj-p4.marshal :as marshal]
             [clj-p4.plan :as plan]
-            [clj-p4.schema :as schema]
-            [clj-p4.shell.git :as git]
-            [clj-p4.shell.p4 :as p4]
-            [clj-p4.shell.proc :as proc]
+            [clj-p4.runner :as runner]
+            [clj-p4.schemas :as schemas]
             [clj-p4.view :as view]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -18,7 +18,7 @@
             [malli.error :as me]))
 
 (defn- validate-options!
-  "Boundary check for `clone!` / `sync!` option maps. Throws ex-info with
+  "Boundary check for `clone!` / `fetch!` option maps. Throws ex-info with
    a humanized message when `args` doesn't conform to `schema-val`. The
    `:source` xor `:sources` constraint is enforced separately by the
    caller; the schema is intentionally loose on that pair."
@@ -113,7 +113,7 @@
 (defn- read-marks-cls
   "Parse the fast-import marks file at `path` (if present) and return a
    set of mark numbers — the changelist numbers of every commit emitted
-   by previous clone-one!/sync-one! invocations sharing this target.
+   by previous clone-one!/fetch-one! invocations sharing this target.
 
    Used to seed cross-source merge-parent detection: when source A is
    imported and then source B is, source B's import sees A's CLs as
@@ -130,7 +130,7 @@
              (into #{}))))))
 
 (defn- run-fast-import!
-  "Open a `git fast-import` handle, run `execute/execute!` over `plan-val`
+  "Open a `git fast-import` handle, run `runner/execute!` over `plan-val`
    with the given fetch `conn`, and close the handle. Returns the final
    ctx (`:last-change`, etc.). Always closes the handle, even on failure."
   [plan-val target conn ref progress-fn stop?]
@@ -138,13 +138,13 @@
         already    (read-marks-cls marks-file)
         handle     (git/fast-import-start target {:marks-file marks-file})]
     (try
-      (let [final (execute/execute! plan-val
-                                    {:git-handle       handle
-                                     :conn             conn
-                                     :ref              ref
-                                     :progress-fn      progress-fn
-                                     :stop?            stop?
-                                     :already-imported already})
+      (let [final (runner/execute! plan-val
+                                   {:git-handle       handle
+                                    :conn             conn
+                                    :ref              ref
+                                    :progress-fn      progress-fn
+                                    :stop?            stop?
+                                    :already-imported already})
             {:keys [exit stderr]} (git/fast-import-close! handle)]
         (when-not (zero? exit)
           (throw (ex-info (str "git fast-import exited " exit)
@@ -160,7 +160,7 @@
   (case (target-status target)
     :clj-p4-clone
     (throw (ex-info (str "clone! target is already a clj-p4 clone: "
-                         target " — use sync! to update it")
+                         target " — use fetch! to update it")
                     {:clj-p4/error :clone-target-is-clone
                      :target       target}))
 
@@ -208,7 +208,7 @@
         (throw e)))))
 
 (defn- build-options
-  "Plan-options map shared by every clone and sync helper. Keys are
+  "Plan-options map shared by every clone and fetch helper. Keys are
    only included when truthy on the source ctx, so a clone that didn't
    pass `:user-map` produces an options map without that key — keeps
    the plan EDN-printable without nil-valued keys."
@@ -366,7 +366,7 @@
    a vector of those maps (one per source) for `:sources`.
 
    Refuses to clone into an existing non-empty `target` — either delete
-   it first or, if it is already a clj-p4 clone, call `sync!`.
+   it first or, if it is already a clj-p4 clone, call `fetch!`.
 
    Virtual streams and classic depot paths are both routed through an
    auto-managed, locked-down ephemeral client (`Options: noallwrite
@@ -381,7 +381,7 @@
            progress-fn (fn [_])
            stop?       (constantly false)}
     :as   args}]
-  (validate-options! schema/clone-options args "clone!")
+  (validate-options! schemas/clone-options args "clone!")
   (when (and source sources)
     (throw (ex-info ":source and :sources are mutually exclusive on clone!"
                     {:clj-p4/error :source-and-sources-set
@@ -430,23 +430,23 @@
      :commit-count (count shas)
      :last-change  (change-from-trailer (last-trailer-message target ref))}))
 
-(defn- do-sync!
-  "Shared body for the three sync-helper variants. See `do-clone!` for
-   the parameter shape — the only differences are that sync uses
-   `:since` to filter `p4 changes`, builds a `sync-plan`, skips
-   `init-bare!`, and folds the change count into the returned
-   `repo-state`."
+(defn- do-fetch!
+  "Shared body for the three fetch-helper variants. See `do-clone!` for
+   the parameter shape — the only differences are that fetch uses
+   `:since` to filter `p4 changes`, builds a `sync-plan` (P4 vocabulary
+   inside the plan layer), skips `init-bare!`, and folds the change
+   count into the returned `repo-state`."
   [{:keys [target since changes-block-size exclude ref
            progress-fn stop?] :as ctx}
-   sync-conn query-path stream-chain view-val]
+   fetch-conn query-path stream-chain view-val]
   (let [mode        (:mode ctx)
-        new-changes (resolve-changes sync-conn query-path
+        new-changes (resolve-changes fetch-conn query-path
                                      {:since (inc since)
                                       :changes-block-size changes-block-size}
                                      mode)]
     (if (seq new-changes)
       (let [plan-val (plan/sync-plan
-                      {:conn         sync-conn
+                      {:conn         fetch-conn
                        :stream-chain stream-chain
                        :changelists  new-changes
                        :target       target
@@ -454,35 +454,35 @@
                        :excludes     exclude
                        :since-change since
                        :options      (build-options ctx)})]
-        (run-fast-import! plan-val target sync-conn ref progress-fn stop?)
+        (run-fast-import! plan-val target fetch-conn ref progress-fn stop?)
         (assoc (repo-state target :ref ref)
-               :synced (count new-changes)))
-      (assoc (repo-state target :ref ref) :synced 0))))
+               :fetched (count new-changes)))
+      (assoc (repo-state target :ref ref) :fetched 0))))
 
-(defn- run-ephemeral-sync!
-  "Body of an ephemeral-client sync. Caller provides the live client."
+(defn- run-ephemeral-fetch!
+  "Body of an ephemeral-client fetch. Caller provides the live client."
   [{:keys [source chain] :as ctx} eph-conn client-name view-lines]
   (let [view-val (view/client-view->view view-lines :source-name source)]
-    (do-sync! ctx eph-conn (str "//" client-name "/...")
-              chain view-val)))
+    (do-fetch! ctx eph-conn (str "//" client-name "/...")
+               chain view-val)))
 
-(defn- sync-direct!
+(defn- fetch-direct!
   [{:keys [conn source chain] :as ctx}]
-  (do-sync! ctx conn (str source "/...") chain nil))
+  (do-fetch! ctx conn (str source "/...") chain nil))
 
-(defn- sync-via-classic!
+(defn- fetch-via-classic!
   [{:keys [conn source classic-source] :as ctx}]
   (p4/with-classic-client
     conn source
     (fn [eph-conn {:client/keys [name view-lines]}]
       (let [view-val (view/client-view->view
                       view-lines :source-name (:stream/name classic-source))]
-        (do-sync! ctx eph-conn (str "//" name "/...")
-                  [classic-source] view-val)))))
+        (do-fetch! ctx eph-conn (str "//" name "/...")
+                   [classic-source] view-val)))))
 
-(defn- sync-one!
-  "Sync a single source into `target` on `ref`. Helper used by both
-   single and multi-stream `sync!`."
+(defn- fetch-one!
+  "Fetch a single source into `target` on `ref`. Helper used by both
+   single and multi-stream `fetch!`."
   [{:keys [conn target] :as args} source ref]
   (let [{:keys [mode]} (choose-mode conn)
         {:keys [source-type chain] classic-source :source}
@@ -495,29 +495,39 @@
                 classic-source (assoc :classic-source classic-source))]
     (cond
       (= :classic source-type)
-      (sync-via-classic! ctx)
+      (fetch-via-classic! ctx)
 
       :else
       (or (p4/with-stream-client-or-fallback
             conn source
             (fn [eph-conn {:client/keys [name view-lines]}]
-              (run-ephemeral-sync! ctx eph-conn name view-lines))
+              (run-ephemeral-fetch! ctx eph-conn name view-lines))
             (constantly nil))
-          (sync-direct! ctx)))))
+          (fetch-direct! ctx)))))
 
-(defn sync!
-  "Bring an existing clj-p4 clone at `target` up to date with the server.
+(defn fetch!
+  "Pull new changelists from the configured Perforce depot and append
+   them as commits to the local bare repo. This does not communicate
+   with any git remote — `:conn` is a P4 ConnectionSpec.
+
+   Semantically equivalent to `git fetch`: incremental, append-only, no
+   working-tree update, no merge into a branch, no submit-back to the
+   depot. The starting point comes from the `[git-p4: ... change = N]`
+   trailer on the most recent commit reachable from `ref`.
 
    Required:
      :conn   ConnectionSpec
      :target existing bare-repo path
-     :source OR :sources — same shape as `clone!`. `:sources` syncs
+     :source OR :sources — same shape as `clone!`. `:sources` fetches
               each source against its respective ref (default
               `refs/heads/<basename>`; override with `:source->ref`).
 
    Optional: same as `clone!`. Virtual streams and classic depot paths
    are routed through the same auto-managed ephemeral-client path as
-   `clone!`."
+   `clone!`.
+
+   Returns `(assoc (repo-state target) :fetched N)` where `N` is the
+   number of new commits appended (zero is a valid no-op result)."
   [{:keys [conn target ref
            source sources source->ref
            exclude
@@ -527,14 +537,14 @@
            progress-fn (fn [_])
            stop?       (constantly false)}
     :as   args}]
-  (validate-options! schema/sync-options args "sync!")
+  (validate-options! schemas/fetch-options args "fetch!")
   (when (and source sources)
-    (throw (ex-info ":source and :sources are mutually exclusive on sync!"
+    (throw (ex-info ":source and :sources are mutually exclusive on fetch!"
                     {:clj-p4/error :source-and-sources-set
                      :source  source
                      :sources sources})))
   (when-not (or source sources)
-    (throw (ex-info "sync! needs :source or :sources"
+    (throw (ex-info "fetch! needs :source or :sources"
                     {:clj-p4/error :no-source})))
   (let [base (-> args
                  (dissoc :source :sources :source->ref :ref)
@@ -547,6 +557,6 @@
         (mapv (fn [src]
                 (let [src-ref (or (get source->ref src)
                                   (default-ref-of-source src))]
-                  (sync-one! base src src-ref)))
+                  (fetch-one! base src src-ref)))
               sources)
-        (sync-one! base source ref)))))
+        (fetch-one! base source ref)))))

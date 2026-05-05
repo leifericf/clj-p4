@@ -1,21 +1,21 @@
-(ns clj-p4.validate
+(ns clj-p4.audit
   "Cross-check a clj-p4 clone against the live P4 server.
 
    Two harnesses are available:
 
-   - **`validate-tip`** (since 0.7.0): cheap count + total-bytes
+   - **`audit-tip`** (since 0.7.0): cheap count + total-bytes
      comparison at git tip vs. `p4 sizes -as <source>/...@<change>`.
      One server RPC + one `git ls-tree` per call. Catches
      order-of-magnitude failures, NOT subtle byte corruption.
-   - **`validate-deep!`** (since 0.14.0): walks every commit (or a
+   - **`audit-deep!`** (since 0.14.0): walks every commit (or a
      sample) and compares each file's bytes against `p4 print -k` of
      the source depot path at the matching changelist. Returns on
      first divergence with the offending commit, path, and digests.
      Many-orders-of-magnitude more expensive RPC-wise; the right tool
-     when `validate-tip` flagged a mismatch and you need to find it."
+     when `audit-tip` flagged a mismatch and you need to find it."
   (:require [clj-p4.api :as api]
-            [clj-p4.shell.p4 :as p4]
-            [clj-p4.shell.proc :as proc]
+            [clj-p4.io.p4 :as p4]
+            [clj-p4.io.subprocess :as proc]
             [clojure.string :as str])
   (:import (java.io ByteArrayOutputStream)
            (java.security MessageDigest)))
@@ -40,7 +40,7 @@
             {:git/file-count 0 :git/total-bytes 0}
             rows)))
 
-(defn validate-tip
+(defn audit-tip
   "Fast sanity check: tree summary at git tip vs. `p4 sizes` at the
    matching changelist. Returns
      {:ok? boolean
@@ -59,7 +59,7 @@
     :or   {ref "refs/heads/main"}}]
   (let [{:keys [last-change]} (api/repo-state target :ref ref)
         _ (when-not last-change
-            (throw (ex-info "validate-tip: no [git-p4: ...] trailer in tip"
+            (throw (ex-info "audit-tip: no [git-p4: ...] trailer in tip"
                             {:clj-p4/error :no-trailer
                              :target       target
                              :ref          ref})))
@@ -151,7 +151,7 @@
       :else                 (let [step (max 1 (quot total n))]
                               (vec (take n (take-nth step commits)))))))
 
-(defn validate-deep!
+(defn audit-deep!
   "Walk `ref`'s commits (newest-first; default `refs/heads/main`),
    sample `:sample` of them (default `10`; `:all` for every commit),
    and for each commit's git tree compare each file's bytes against
@@ -171,7 +171,7 @@
    For an auto-view clone, the local path equals what the server
    resolved minus the client prefix.
 
-   This is many orders of magnitude more expensive than `validate-tip`.
+   This is many orders of magnitude more expensive than `audit-tip`.
    Use `:sample 1` to spot-check, `:sample :all` only when investigating
    a known mismatch."
   [{:keys [conn target source ref sample]

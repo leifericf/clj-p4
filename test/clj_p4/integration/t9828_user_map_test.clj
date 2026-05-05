@@ -15,7 +15,7 @@
             [clj-p4.api :as api]
             [clj-p4.integration.fixture :as fix]
             [clj-p4.integration.git-assert :as ga]
-            [clj-p4.shell.proc :as proc]))
+            [clj-p4.io.subprocess :as proc]))
 
 (use-fixtures :once
   (fn [f] (when (fix/integration-enabled?) (fix/with-p4d f))))
