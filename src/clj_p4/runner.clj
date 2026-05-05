@@ -71,16 +71,21 @@
 
 (defn- map-rev->local
   "Return the local path for a FileRev, or `nil` if the file is filtered
-   out (view-excluded, view-ignored, or excludes-policy match).
+   out by view, path-pattern excludes, or the type-based `:exclude-fn`
+   predicate.
 
    The depot path may carry Perforce's `%XX` escapes for `@`, `#`, `*`,
    `%` (and any other reserved char). View mapping passes those through
    verbatim, so the local path can still contain escapes when we get
-   here. The exclusion check runs against the *unescaped* path so user
+   here. The pattern check runs against the *unescaped* path so user
    patterns match human-readable filenames; the result returned to
    git-fast-import is also unescaped, since git stores the literal
-   filename, not the p4 wire-format spelling."
-  [{:keys [view excludes]} {:rev/keys [depot] :as _fr}]
+   filename, not the p4 wire-format spelling.
+
+   Filter order: view-excluded/ignored first (cheap, server-defined),
+   then path patterns, then `:exclude-fn` (which may inspect any FileRev
+   field — `:rev/type` for the binary catch-all is the common case)."
+  [{:keys [view excludes exclude-fn]} {:rev/keys [depot] :as fr}]
   (let [local (view/map-depot->local view depot)]
     (cond
       (#{:clj-p4.view/excluded
@@ -90,7 +95,8 @@
 
       :else
       (let [unescaped (depot-path/unescape local)]
-        (when-not (excluded-by-policy? excludes unescaped)
+        (when-not (or (excluded-by-policy? excludes unescaped)
+                      (and exclude-fn (exclude-fn fr)))
           unescaped)))))
 
 (defn- strip-trailing-newline
@@ -311,19 +317,28 @@
 
 (defn- merge-source-for-cl
   "Given a changelist `cl`, look up the merge-source change number — the
-   change a majority of the CL's `:integrate` files were branched/merged
-   from — or nil. Returns nil when:
+   change a majority of the CL's surviving `:integrate` files were
+   branched/merged from — or nil. Returns nil when:
    - no `:integrate` files in the CL, or
+   - all `:integrate` files are filtered out (view, path patterns, or
+     `:exclude-fn`) — those files won't survive into git, so a merge
+     parent derived from them would describe a relationship git can't
+     see, and
    - lookups returned no candidates, or
-   - no single source change holds a strict majority of integrates, or
+   - no single source change holds a strict majority of *surviving*
+     integrates, or
    - the majority winner isn't in `imported-set`.
 
-   Two RPCs per integrate file: `p4 integrated -F change=<C>` to find
-   the source path + rev, then `p4 fstat <source>#<rev>` to find the
-   change that produced that rev. Fanned out via `bounded-pmap` so the
-   cost is bounded by `:fetch-parallelism`."
-  [{:keys [conn fetch-parallelism]} {:p4/keys [change files]} imported?]
-  (let [integrate-files (filter #(= :integrate (:rev/action %)) files)
+   Two RPCs per surviving integrate file: `p4 integrated -F change=<C>`
+   to find the source path + rev, then `p4 fstat <source>#<rev>` to find
+   the change that produced that rev. Fanned out via `bounded-pmap` so
+   the cost is bounded by `:fetch-parallelism`. Pre-filtering through
+   `map-rev->local` means excluded files (e.g. all-binary integrate
+   re-baselines under `:exclude-binaries?`) cost zero P4 calls."
+  [{:keys [conn fetch-parallelism] :as ctx} {:p4/keys [change files]} imported?]
+  (let [integrate-files (->> files
+                             (filter #(= :integrate (:rev/action %)))
+                             (filter #(some? (map-rev->local ctx %))))
         lookup-source
         (fn [fr]
           (try
@@ -403,6 +418,7 @@
      :git-handle        git-handle
      :view              (:plan/view plan)
      :excludes          (:plan/excludes plan)
+     :exclude-fn        (when (:exclude-binaries? opts) excludes/binary-rev?)
      :target            (:plan/target plan)
      :stream-name       (:stream/name (:plan/source plan))
      :ref               (or ref "refs/heads/main")
