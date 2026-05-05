@@ -4,6 +4,7 @@
    This is the only mutable layer. Every other namespace returns plain
    data; `execute!` is where blobs hit disk and commits become refs."
   (:require [clj-p4.exclude :as exclude]
+            [clj-p4.parse.depot-path :as depot-path]
             [clj-p4.plan :as plan]
             [clj-p4.shell.git :as git]
             [clj-p4.shell.p4 :as p4]
@@ -70,7 +71,15 @@
 
 (defn- map-rev->local
   "Return the local path for a FileRev, or `nil` if the file is filtered
-   out (view-excluded, view-ignored, or excludes-policy match)."
+   out (view-excluded, view-ignored, or excludes-policy match).
+
+   The depot path may carry Perforce's `%XX` escapes for `@`, `#`, `*`,
+   `%` (and any other reserved char). View mapping passes those through
+   verbatim, so the local path can still contain escapes when we get
+   here. The exclusion check runs against the *unescaped* path so user
+   patterns match human-readable filenames; the result returned to
+   git-fast-import is also unescaped, since git stores the literal
+   filename, not the p4 wire-format spelling."
   [{:keys [view excludes]} {:rev/keys [depot] :as _fr}]
   (let [local (view/map-depot->local view depot)]
     (cond
@@ -79,10 +88,10 @@
          :clj-p4.view/no-match} local)
       nil
 
-      (excluded-by-policy? excludes local)
-      nil
-
-      :else local)))
+      :else
+      (let [unescaped (depot-path/unescape local)]
+        (when-not (excluded-by-policy? excludes unescaped)
+          unescaped)))))
 
 (defn- fetch-blob-bytes!
   "Run `p4 print` for one file and return the bytes. Honours

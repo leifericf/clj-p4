@@ -208,6 +208,22 @@ Paths:
 (pp-soft! "add" (str wroot "/src/Case.txt"))
 (pp-soft! "submit" "-d" "t9821: uppercase Case.txt next to case.txt")
 
+;; --- change N: t9812 P4-wildcard chars in filenames ----------------------
+;; Files whose literal disk names contain `@`, `#`, `*`, `%`. p4 add -f
+;; takes the *literal* on-disk name and stores the depot path in p4's
+;; escaped wire form (`%40 %23 %2A %25`); the importer must unescape on
+;; the way into git.
+(write-text! (str wroot "/src/wild/at@x.txt")    "at\n")
+(write-text! (str wroot "/src/wild/hash#x.txt")  "hash\n")
+(write-text! (str wroot "/src/wild/star*x.txt")  "star\n")
+(write-text! (str wroot "/src/wild/pct%x.txt")   "pct\n")
+(pp! "add" "-f"
+     (str wroot "/src/wild/at@x.txt")
+     (str wroot "/src/wild/hash#x.txt")
+     (str wroot "/src/wild/star*x.txt")
+     (str wroot "/src/wild/pct%x.txt"))
+(pp! "submit" "-d" "t9812: wildcard chars in filenames")
+
 ;; --- change 11: t9830 symlink pointing at a directory ---------------------
 ;; `src/dirlink` → `oddly named` (a directory created in change 3). Tests
 ;; that mode 120000 + the directory-name blob round-trip into git intact.
