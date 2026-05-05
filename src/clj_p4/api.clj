@@ -174,15 +174,16 @@
    pass `:user-map` produces an options map without that key — keeps
    the plan EDN-printable without nil-valued keys."
   [{:keys [max-changes fetch-parallelism max-print-bytes user-map
-           emit-labels? lookahead no-merge?]}]
+           emit-labels? lookahead no-merge? keep-empty-commits?]}]
   (cond-> {:checkpoint-every 1000}
-    max-changes       (assoc :max-changes max-changes)
-    fetch-parallelism (assoc :fetch-parallelism fetch-parallelism)
-    max-print-bytes   (assoc :max-print-bytes max-print-bytes)
-    user-map          (assoc :user-map user-map)
-    emit-labels?      (assoc :emit-labels? emit-labels?)
-    lookahead         (assoc :lookahead lookahead)
-    no-merge?         (assoc :no-merge? no-merge?)))
+    max-changes         (assoc :max-changes max-changes)
+    fetch-parallelism   (assoc :fetch-parallelism fetch-parallelism)
+    max-print-bytes     (assoc :max-print-bytes max-print-bytes)
+    user-map            (assoc :user-map user-map)
+    emit-labels?        (assoc :emit-labels? emit-labels?)
+    lookahead           (assoc :lookahead lookahead)
+    no-merge?           (assoc :no-merge? no-merge?)
+    keep-empty-commits? (assoc :keep-empty-commits? keep-empty-commits?)))
 
 (defn- do-clone!
   "Shared body for the three clone-helper variants. `clone-conn` is the

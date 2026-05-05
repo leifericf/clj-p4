@@ -350,22 +350,34 @@
               winner)))))))
 
 (defn- emit-change!
+  "Emit one fast-import commit for `change-num`. When the CL produces no
+   file ops after view + exclude filtering, the commit is skipped unless
+   `:keep-empty-commits?` is set on the plan options. The skip leaves
+   `:last-change` unchanged, so the next emitted commit chains its
+   `from` parent off the previous *emitted* CL — preserving a contiguous
+   git history over the touching changes only.
+
+   Default is to skip (matches git-p4's default — `--keep-empty-commits`
+   turns keeping on)."
   [{:keys [git-handle ref last-change stream-name user-map
-           no-merge? imported?] :as ctx} change-num]
-  (let [cl     (describe-cached ctx change-num)
-        ops    (file-ops-for-change ctx cl)
-        merge-src (when-not no-merge?
-                    (merge-source-for-cl ctx cl (or imported? (constantly false))))
-        commit {:ref       ref
-                :mark      (:p4/change cl)
-                :committer (committer-of user-map cl)
-                :message   (commit-message stream-name cl)
-                :files     ops}
-        commit (cond-> commit
-                 last-change (assoc :from (str ":" last-change))
-                 merge-src   (assoc :merge [(str ":" merge-src)]))]
-    (git/emit-commit! git-handle commit)
-    (assoc ctx :last-change (:p4/change cl))))
+           no-merge? imported? keep-empty-commits?] :as ctx} change-num]
+  (let [cl  (describe-cached ctx change-num)
+        ops (file-ops-for-change ctx cl)]
+    (if (and (empty? ops) (not keep-empty-commits?))
+      ctx
+      (let [merge-src (when-not no-merge?
+                        (merge-source-for-cl ctx cl
+                                             (or imported? (constantly false))))
+            commit {:ref       ref
+                    :mark      (:p4/change cl)
+                    :committer (committer-of user-map cl)
+                    :message   (commit-message stream-name cl)
+                    :files     ops}
+            commit (cond-> commit
+                     last-change (assoc :from (str ":" last-change))
+                     merge-src   (assoc :merge [(str ":" merge-src)]))]
+        (git/emit-commit! git-handle commit)
+        (assoc ctx :last-change (:p4/change cl))))))
 
 (defn- step
   [ctx op]
@@ -400,6 +412,7 @@
      :changelists       (vec (:plan/changelists plan))
      :describes         (when (and lookahead (pos? lookahead)) (atom {}))
      :no-merge?         (boolean (:no-merge? opts))
+     :keep-empty-commits? (boolean (:keep-empty-commits? opts))
      :imported?         (fn [c] (or (contains? new-set c)
                                     (and since (some-> c (<= since)))))
      :last-change       since}))

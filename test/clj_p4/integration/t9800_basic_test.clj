@@ -41,7 +41,12 @@
         target (str (io/file (tmp-dir) "sync.git"))
         clone-result (api/clone! {:conn conn :source "//stream/main"
                                   :target target})
-        before-commits (:commits clone-result)]
+        before-commits (:commits clone-result)
+        ;; Unique filename per invocation: a sub-second-precise nano-id
+        ;; so this test stays idempotent if the same docker fixture is
+        ;; shared across multiple in-session runs.
+        extra (str "/p4/ws_main/src/extra-"
+                   (System/nanoTime) ".txt")]
     ;; Submit a new change inside the docker container. Uses `set -eu`
     ;; (no `-o pipefail` — the container's /bin/sh is dash, which doesn't
     ;; recognise pipefail).
@@ -49,8 +54,8 @@
      ["docker" "compose" "-f" "test/fixtures/p4d/docker-compose.yml"
       "exec" "-T" "p4d" "sh" "-c"
       (str "set -eu; "
-           "echo new > /p4/ws_main/src/extra.txt; "
-           "p4 -c clj_p4_seed_main -u admin -P admin1234 add /p4/ws_main/src/extra.txt; "
+           "echo new > " extra "; "
+           "p4 -c clj_p4_seed_main -u admin -P admin1234 add " extra "; "
            "p4 -c clj_p4_seed_main -u admin -P admin1234 submit -d 't9800-sync-extra'")]
      {:timeout-ms 60000})
 

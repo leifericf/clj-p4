@@ -235,6 +235,7 @@
    [:emit-labels? {:optional true} [:maybe boolean?]]
    [:lookahead {:optional true} [:maybe [:int {:min 0}]]]
    [:no-merge? {:optional true} [:maybe boolean?]]
+   [:keep-empty-commits? {:optional true} [:maybe boolean?]]
    [:progress-fn {:optional true} ifn?]
    [:stop? {:optional true} ifn?]])
 

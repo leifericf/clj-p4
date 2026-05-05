@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+### Added
+
+- `clone!` / `sync!` accept `:keep-empty-commits?` (default `false`).
+  Mirrors git-p4's `--keep-empty-commits`: when a changelist's only
+  files are filtered out by view or `:exclude`, the default is now to
+  *skip* the resulting empty commit so the imported history matches
+  the touching CLs. Set to `true` to preserve every CL as a commit
+  regardless of its post-filter file count.
+- `clj-p4.parse.depot-path/unescape` — decode `%XX` percent-escapes in
+  Perforce depot paths back to literal characters (`%40`→`@`, `%23`→`#`,
+  `%2A`→`*`, `%25`→`%`, plus any other `%XX`). Applied automatically by
+  the importer when materialising local paths so filenames containing
+  the four P4-reserved wildcard characters round-trip into git intact.
+
+### Changed
+
+- **Breaking:** `clone!` / `sync!` now skip empty commits by default
+  (matches upstream git-p4). Callers that relied on every CL becoming
+  a commit even when filtered to zero files must pass
+  `:keep-empty-commits? true` to restore the previous behaviour.
+- `init-bare!` forces `core.ignorecase=false` on the new repo. Without
+  this, hosts whose filesystem auto-sets `ignorecase=true` (notably
+  macOS/APFS) silently merged case-only sibling paths in the imported
+  tree, producing wrong output. The bare repo has no working tree, so
+  there's no upside to the auto-detection.
+
+### Fixed
+
+- Symlink blob bytes have any trailing `\n` (or `\r\n`) stripped before
+  being written to git. p4 ships symlink content with a newline
+  terminator; git's symlink convention is for the blob content to be
+  exactly the target path.
+- Ephemeral clients are now torn down with `client -d -f`. The
+  importer creates them with `Options: locked` so the server itself
+  refuses depot mutations during import; without `-f`, the matching
+  delete refused too and clients accumulated on the server.
+
 ## 0.2.0-alpha
 
 Second tagged release. Adds boundary validation and parser coercion via
