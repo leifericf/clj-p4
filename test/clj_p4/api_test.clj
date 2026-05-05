@@ -914,6 +914,21 @@
              clojure.lang.ExceptionInfo #"needs :source"
              (api/clone! {:conn   {:p4/port "h:1666"}
                           :target target})))
+        (finally (rm-rf d)))))
+  (testing "passing :sources [] throws — empty collection is not a source"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))]
+      (try
+        (is (thrown-with-msg?
+             clojure.lang.ExceptionInfo #"needs :source"
+             (api/clone! {:conn    {:p4/port "h:1666"}
+                          :target  target
+                          :sources []})))
+        (is (thrown-with-msg?
+             clojure.lang.ExceptionInfo #"needs :source"
+             (api/fetch! {:conn    {:p4/port "h:1666"}
+                          :target  target
+                          :sources []})))
         (finally (rm-rf d))))))
 
 (deftest exclude-and-high-level-mutually-exclusive-test

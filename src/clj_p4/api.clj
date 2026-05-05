@@ -462,7 +462,7 @@
                     {:clj-p4/error :source-and-sources-set
                      :source  source
                      :sources sources})))
-  (when-not (or source sources)
+  (when-not (or source (seq sources))
     (throw (ex-info "clone! needs :source or :sources"
                     {:clj-p4/error :no-source})))
   (assert-target-empty! target)
@@ -620,7 +620,7 @@
                     {:clj-p4/error :source-and-sources-set
                      :source  source
                      :sources sources})))
-  (when-not (or source sources)
+  (when-not (or source (seq sources))
     (throw (ex-info "fetch! needs :source or :sources"
                     {:clj-p4/error :no-source})))
   (let [exclude' (resolve-exclude args)

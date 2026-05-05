@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- `clone!` / `fetch!` reject `:sources []` (an empty collection). The
+  previous `(or source sources)` predicate counted `[]` as truthy, so
+  the call returned `[]` having done no work — the user thought they
+  had cloned. The check is now `(or source (seq sources))`, raising the
+  existing `:clj-p4/error :no-source` instead.
 - `clone!` / `fetch!` reject `:exclude-categories` keywords that aren't
   in `clj-p4.excludes/binary-categories`. A typo (e.g. `:image` for
   `:images`) used to silently produce zero patterns, leaving the user
