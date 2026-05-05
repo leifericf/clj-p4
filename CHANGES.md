@@ -55,6 +55,19 @@
 
 ### Fixed
 
+- `clj-p4.shell.p4/integrated` previously called `p4 integrated -F
+  change=N <to-file>`; that flag isn't valid on `p4 integrated` (only
+  on `fstat` / `sizes`) and the call always failed with empty stderr,
+  silently disabling merge-parent detection on every multi-source
+  clone since this code was written. Replaced with an unfiltered call
+  + clojure-side `:integ/change` filter. Rev fields like `endFromRev`
+  also come back as `#2` in `-ztag` mode, not `2`; added a `parse-rev`
+  helper that strips the leading `#`.
+- Multi-source `clone!` now threads a *cross-source* `:already-imported`
+  set (read from the shared marks file) into the executor's `imported?`
+  predicate. Without this, `merge-source-for-cl` never saw the other
+  source's CLs as imported and 2-parent commits were never emitted
+  across sources.
 - Symlink blob bytes have any trailing `\n` (or `\r\n`) stripped before
   being written to git. p4 ships symlink content with a newline
   terminator; git's symlink convention is for the blob content to be
