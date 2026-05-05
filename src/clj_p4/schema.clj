@@ -13,6 +13,7 @@
    predicates (`depot-path?`, `parse-depot-path`); the two are
    complementary and intentionally not merged."
   (:require [clj-p4.spec :as spec]
+            [clojure.string :as str]
             [malli.core :as m]
             [malli.transform :as mt]))
 
@@ -80,6 +81,18 @@
    predicate to keep the regex grammar in one place."
   [:fn {:error/message "should be a P4 depot path (//depot/...)"}
    spec/depot-path?])
+
+(def file-coercible
+  "Anything `clojure.java.io/file` can handle once stringified — the
+   implementation in `clj-p4.api` calls `(io/file (str target))`, which
+   accepts `String`, `java.io.File`, `java.nio.file.Path`, `java.net.URI`,
+   `java.net.URL`, and any other object whose `str` produces a non-blank
+   path. Rejects nil and the empty / blank string so callers get a clear
+   boundary error instead of a deeper NPE."
+  [:fn {:error/message
+        "should be a non-blank file path (string, File, Path, URI, …)"}
+   (fn [v] (and (some? v)
+                (not (str/blank? (str v)))))])
 
 (def unicode-flag
   "P4 `unicode` info field. Wire format is the literal string
@@ -185,7 +198,7 @@
    sync-options inline these so error messages point at the operation
    the caller actually invoked."
   [[:conn connection-spec]
-   [:target [:or string? [:fn #(instance? java.io.File %)]]]
+   [:target file-coercible]
    [:ref {:optional true} string?]
    [:source {:optional true} string?]
    [:sources {:optional true} [:vector string?]]

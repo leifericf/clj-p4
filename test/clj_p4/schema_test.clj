@@ -147,6 +147,33 @@
 
 ;; ---------------- Public API options ----------------
 
+(deftest target-accepts-coercible-types-test
+  (testing "string target validates"
+    (is (m/validate s/clone-options
+                    {:conn   {:p4/port "h:1666"}
+                     :target "/tmp/r"
+                     :source "//s/main"})))
+  (testing "java.io.File target validates"
+    (is (m/validate s/clone-options
+                    {:conn   {:p4/port "h:1666"}
+                     :target (java.io.File. "/tmp/r")
+                     :source "//s/main"})))
+  (testing "java.nio.file.Path target validates (modern java.nio idiom)"
+    (let [p (java.nio.file.Paths/get "/tmp/r" (into-array String []))]
+      (is (m/validate s/clone-options
+                      {:conn   {:p4/port "h:1666"}
+                       :target p
+                       :source "//s/main"}))))
+  (testing "rejects nil and blank-string targets"
+    (is (not (m/validate s/clone-options
+                         {:conn   {:p4/port "h:1666"}
+                          :target nil
+                          :source "//s/main"})))
+    (is (not (m/validate s/clone-options
+                         {:conn   {:p4/port "h:1666"}
+                          :target "   "
+                          :source "//s/main"})))))
+
 (deftest clone-options-test
   (testing "minimal valid options"
     (is (m/validate s/clone-options

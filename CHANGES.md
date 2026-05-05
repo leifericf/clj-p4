@@ -33,6 +33,12 @@
 
 ### Fixed
 
+- `clone!` / `sync!` boundary accepts any file-coercible `:target` —
+  string, `java.io.File`, `java.nio.file.Path`, `java.net.URI`,
+  `java.net.URL`, etc. — matching what the implementation already did
+  via `(io/file (str target))`. Previously the schema only allowed
+  `String` or `File`, which broke callers passing modern `java.nio`
+  paths.
 - Parser fields typed as longs (`:p4/change`, `:p4/time`, `:rev/rev`,
   `:rev/size`, `:p4/server-version-major` / `-minor`) decode to nil
   when the wire string can't be parsed, instead of leaking the raw
