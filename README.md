@@ -42,6 +42,10 @@ clj-p4 is strictly P4 to Git. It will never issue a Perforce command that mutate
 | `:max-print-bytes` | Per-file `p4 print` cap; throws `:clj-p4/error :max-print-bytes-exceeded` above. |
 | `:lookahead` | Background `p4 describe` futures prefetching upcoming changelists. |
 | `:no-merge?` | Disable integrate-as-2-parent merge detection. |
+| `:keep-empty-commits?` | Default `false` — skip the commit when a CL produces zero file ops after view + `:exclude` filtering. Set to `true` to emit empty commits. |
+| `:changes-block-size` | Walk `p4 changes` in fixed-size CL windows. Required when the user is in a group with `MaxResults` / `MaxScanRows` low enough to refuse an unbounded query. |
+| `:metadata-decoding-strategy` | `:strict` (default), `:fallback`, or `:passthrough`. Controls how marshal/JSON byte payloads (descriptions, usernames) decode into strings. Only matters against non-unicode-mode p4d. |
+| `:metadata-fallback-encoding` | Charset name (default `"CP1252"`). Used by the `:fallback` strategy when UTF-8 decoding fails. |
 | `:user-map` | `{<p4-user> {:name :email}}` for the git author/committer line. Users absent from the map fall back to `<user>@perforce`. |
 | `:emit-labels?` | Walk `p4 labels` after import and emit annotated git tags for labels whose `Revision:` resolves to an imported changelist. *(`clone!` only.)* |
 | `:progress-fn` | `(fn [op])` invoked before each emitted operation. |
@@ -143,7 +147,8 @@ Every `p4` invocation also passes through a runtime allowlist. Anything else thr
 | `labels`, `label -o` | Read labels (used by `:emit-labels?`). |
 | `users`, `user -o` | Read user records. |
 | `protects` | Read protections table. |
-| `client -o` / `-i` / `-d` | Metadata-only writes. Required to create the ephemeral client used for virtual streams and classic-depot clones. Never touches depot file state. |
+| `counter` | Read the server-wide head changelist counter (used by block-mode head probe, not subject to `MaxResults`). |
+| `client -o` / `-i` / `-d` / `-d -f` | Metadata-only writes. Required to create the ephemeral client used for virtual streams and classic-depot clones; `-d -f` force-deletes the import-locked client on cleanup. Never touches depot file state. |
 
 Ephemeral clients are created with `Options: noallwrite noclobber locked`, so the server refuses any depot-mutating operation routed through them. The client root is a scratch path under `/tmp/clj-p4-eph-<uuid>`. Each client is deleted in a `finally` block, whether the run succeeds or fails. `client -i` and `client -d` are the only allowed metadata writes; they modify a server-side client spec, not depot files.
 
