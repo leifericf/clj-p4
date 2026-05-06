@@ -66,8 +66,14 @@
            (contains? keyword-flags :ko))))
 
 (defn- excluded-by-policy?
-  [excludes local-path]
-  (and (seq excludes) (excludes/matches-any? excludes local-path)))
+  "True iff `local-path` is dropped by the path-pattern policy:
+   matches at least one `:excludes` pattern AND no `:includes` pattern
+   (gitignore-style set difference)."
+  [{:keys [excludes includes]} local-path]
+  (and (seq excludes)
+       (excludes/matches-any? excludes local-path)
+       (not (and (seq includes)
+                 (excludes/matches-any? includes local-path)))))
 
 (defn- map-rev->local
   "Return the local path for a FileRev, or `nil` if the file is filtered
@@ -83,9 +89,10 @@
    filename, not the p4 wire-format spelling.
 
    Filter order: view-excluded/ignored first (cheap, server-defined),
-   then path patterns, then `:exclude-fn` (which may inspect any FileRev
-   field — `:rev/type` for the binary catch-all is the common case)."
-  [{:keys [view excludes exclude-fn]} {:rev/keys [depot] :as fr}]
+   then path patterns (`:excludes` minus `:includes` carve-outs), then
+   `:exclude-fn` (which may inspect any FileRev field — `:rev/type` for
+   the binary catch-all is the common case)."
+  [{:keys [view exclude-fn] :as ctx} {:rev/keys [depot] :as fr}]
   (let [local (view/map-depot->local view depot)]
     (cond
       (#{:clj-p4.view/excluded
@@ -95,7 +102,7 @@
 
       :else
       (let [unescaped (depot-path/unescape local)]
-        (when-not (or (excluded-by-policy? excludes unescaped)
+        (when-not (or (excluded-by-policy? ctx unescaped)
                       (and exclude-fn (exclude-fn fr)))
           unescaped)))))
 
@@ -427,6 +434,7 @@
      :git-handle        git-handle
      :view              (:plan/view plan)
      :excludes          (:plan/excludes plan)
+     :includes          (:plan/includes plan)
      :exclude-fn        (when (:exclude-binaries? opts) excludes/binary-rev?)
      :target            (:plan/target plan)
      :stream-name       (:stream/name (:plan/source plan))

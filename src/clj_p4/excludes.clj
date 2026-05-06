@@ -75,7 +75,12 @@
     (mapcat resource-map keys-in-order)))
 
 (defn exclude-patterns
-  "Compute the final exclusion pattern list given an options map.
+  "Compute the resolved exclude/include pattern lists from an options map.
+
+   The two lists are orthogonal — `:includes` is *not* string-removal of
+   exclude patterns. Both are evaluated against each candidate path at
+   match time: a path is filtered out iff some `:excludes` entry matches
+   AND no `:includes` entry matches (gitignore-style set difference).
 
    Options:
      :categories           — `:all` or a set of category keywords selected
@@ -89,21 +94,21 @@
      :no-default-excludes? — skip the resource's patterns when `:categories`
                              is absent. Has no effect on an explicit
                              `:categories` selection.
-     :excludes             — additional patterns to add.
-     :includes             — patterns to remove from the union (whitelist).
+     :excludes             — additional exclude patterns.
+     :includes             — re-include carve-out patterns.
 
-   Returns a deduped vector of pattern strings, in stable order:
-   resource patterns first (category iteration order), then extras."
+   Returns `{:excludes [str…] :includes [str…]}` — each list deduped and
+   in stable insertion order (resource patterns first when applicable,
+   then user `:excludes`)."
   [{:keys [categories resource no-default-excludes? excludes includes]}]
   (let [universe (or resource
                      (when categories @builtin-binaries-resource))
         defaults (cond
                    categories             (select-categories universe categories)
                    no-default-excludes?   nil
-                   :else                  (apply concat (vals (or universe {}))))
-        all         (concat defaults excludes)
-        include-set (set includes)]
-    (->> all (remove include-set) distinct vec)))
+                   :else                  (apply concat (vals (or universe {}))))]
+    {:excludes (->> (concat defaults excludes) distinct vec)
+     :includes (->> includes distinct vec)}))
 
 (def binary-rev-types
   "P4 base types whose content is binary. Revisions whose `:rev/type` is

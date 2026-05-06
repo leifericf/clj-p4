@@ -29,25 +29,32 @@
                      already composed the view server-side).
      :excludes       vector of compiled exclude entries (output of
                      `clj-p4.excludes/compile-patterns`)
+     :includes       vector of compiled include carve-out entries (same
+                     shape as `:excludes`); a path is filtered out iff
+                     some `:excludes` entry matches and no `:includes`
+                     entry matches
      :options        free-form opts map (`:max-changes`, `:checkpoint-every`,
                      `:resume?`)"
-  [{:keys [conn stream-chain changelists target view excludes options]}]
+  [{:keys [conn stream-chain changelists target view excludes includes options]}]
   {:plan/kind        :clone
    :plan/conn        conn
    :plan/source      (last stream-chain)
    :plan/view        (or view (view/effective-view stream-chain))
    :plan/changelists (vec changelists)
    :plan/excludes    (vec (or excludes []))
+   :plan/includes    (vec (or includes []))
    :plan/target      target
    :plan/options     (or options {})})
 
 (defn sync-plan
   "Build a `SyncPlan`. Like `clone-plan` but tagged `:sync` and carries
    `:plan/since-change` (the last imported changelist)."
-  [{:keys [conn stream-chain changelists target view excludes options since-change]}]
+  [{:keys [conn stream-chain changelists target view excludes includes
+           options since-change]}]
   (assoc (clone-plan {:conn conn :stream-chain stream-chain
                       :changelists changelists :target target
-                      :view view :excludes excludes :options options})
+                      :view view :excludes excludes :includes includes
+                      :options options})
          :plan/kind         :sync
          :plan/since-change since-change))
 

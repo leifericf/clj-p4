@@ -4,31 +4,46 @@
 
 (deftest exclude-patterns-test
   (testing "resource patterns plus extras"
-    (is (= ["*.exe" "*.dll" "*.zip" "*.bak"]
+    (is (= {:excludes ["*.exe" "*.dll" "*.zip" "*.bak"]
+            :includes []}
            (ex/exclude-patterns
             {:resource {:executables ["*.exe" "*.dll"]
                         :archives    ["*.zip"]}
              :excludes ["*.bak"]}))))
 
   (testing "no-default-excludes? drops resource"
-    (is (= ["*.bak"]
+    (is (= {:excludes ["*.bak"]
+            :includes []}
            (ex/exclude-patterns
             {:resource {:executables ["*.exe"]}
              :no-default-excludes? true
              :excludes ["*.bak"]}))))
 
-  (testing "includes whitelist"
-    (is (= ["*.dll" "*.bak"]
+  (testing ":includes is preserved orthogonally — set-difference at match time"
+    (is (= {:excludes ["*.exe" "*.dll" "*.bak"]
+            :includes ["*.exe"]}
            (ex/exclude-patterns
             {:resource {:executables ["*.exe" "*.dll"]}
              :excludes ["*.bak"]
              :includes ["*.exe"]}))))
 
-  (testing "dedupe"
-    (is (= ["*.exe"]
+  (testing "path-level carve-out: Content/keep/ stays in :includes"
+    (is (= {:excludes ["Content/"]
+            :includes ["Content/keep/"]}
+           (ex/exclude-patterns
+            {:no-default-excludes? true
+             :excludes ["Content/"]
+             :includes ["Content/keep/"]}))))
+
+  (testing "dedupe per list"
+    (is (= {:excludes ["*.exe"] :includes []}
            (ex/exclude-patterns
             {:resource {:a ["*.exe"] :b ["*.exe"]}
-             :excludes ["*.exe"]})))))
+             :excludes ["*.exe"]})))
+    (is (= {:excludes [] :includes ["*.psd"]}
+           (ex/exclude-patterns
+            {:no-default-excludes? true
+             :includes ["*.psd" "*.psd"]})))))
 
 (deftest pattern->re-test
   (testing "*.ext at any depth"
@@ -102,54 +117,61 @@
       (is (contains? cats :engine-assets))))
 
   (testing ":categories with a subset selects from the built-in resource"
-    (let [out (ex/exclude-patterns {:categories #{:images}})]
-      (is (some #{"*.png"} out))
-      (is (some #{"*.psd"} out))
-      (is (not (some #{"*.wav"} out)))
-      (is (not (some #{"*.exe"} out)))))
+    (let [{:keys [excludes]} (ex/exclude-patterns {:categories #{:images}})]
+      (is (some #{"*.png"} excludes))
+      (is (some #{"*.psd"} excludes))
+      (is (not (some #{"*.wav"} excludes)))
+      (is (not (some #{"*.exe"} excludes)))))
 
   (testing ":categories :all unions every category"
-    (let [out (ex/exclude-patterns {:categories :all})]
-      (is (some #{"*.png"} out))     ; images
-      (is (some #{"*.wav"} out))     ; audio
-      (is (some #{"*.uasset"} out))  ; engine-assets
-      (is (some #{"*.dll"} out))))   ; compiled
+    (let [{:keys [excludes]} (ex/exclude-patterns {:categories :all})]
+      (is (some #{"*.png"} excludes))     ; images
+      (is (some #{"*.wav"} excludes))     ; audio
+      (is (some #{"*.uasset"} excludes))  ; engine-assets
+      (is (some #{"*.dll"} excludes))))   ; compiled
 
   (testing "text-form formats are deliberately absent from the curated list"
-    (let [out (ex/exclude-patterns {:categories :all})]
-      (is (not (some #{"*.svg"} out)))     ; XML
-      (is (not (some #{"*.gltf"} out)))    ; JSON
-      (is (not (some #{"*.dae"} out)))     ; COLLADA XML
-      (is (not (some #{"*.obj"} out)))     ; text Wavefront
-      (is (not (some #{"*.unity"} out)))   ; Unity YAML
-      (is (not (some #{"*.prefab"} out))))) ; Unity YAML
+    (let [{:keys [excludes]} (ex/exclude-patterns {:categories :all})]
+      (is (not (some #{"*.svg"} excludes)))
+      (is (not (some #{"*.gltf"} excludes)))
+      (is (not (some #{"*.dae"} excludes)))
+      (is (not (some #{"*.obj"} excludes)))
+      (is (not (some #{"*.unity"} excludes)))
+      (is (not (some #{"*.prefab"} excludes)))))
 
-  (testing ":categories with :includes narrows the union"
-    (let [out (ex/exclude-patterns {:categories #{:images}
-                                    :includes ["*.png"]})]
-      (is (some #{"*.psd"} out))
-      (is (not (some #{"*.png"} out)))))
+  (testing ":categories with :includes leaves both lists populated"
+    (let [{:keys [excludes includes]}
+          (ex/exclude-patterns {:categories #{:images}
+                                :includes ["*.png"]})]
+      (is (some #{"*.psd"} excludes))
+      (is (some #{"*.png"} excludes))
+      (is (= ["*.png"] includes))))
 
   (testing ":categories with :excludes appends after built-ins"
-    (let [out (ex/exclude-patterns {:categories #{:images}
-                                    :excludes ["*.myfmt"]})]
-      (is (some #{"*.png"} out))
-      (is (some #{"*.myfmt"} out))))
+    (let [{:keys [excludes]}
+          (ex/exclude-patterns {:categories #{:images}
+                                :excludes ["*.myfmt"]})]
+      (is (some #{"*.png"} excludes))
+      (is (some #{"*.myfmt"} excludes))))
 
   (testing "user-supplied :resource takes precedence over built-ins"
-    (let [out (ex/exclude-patterns {:resource   {:custom ["*.weird"]}
-                                    :categories :all})]
-      (is (= ["*.weird"] out))))
+    (let [{:keys [excludes]}
+          (ex/exclude-patterns {:resource   {:custom ["*.weird"]}
+                                :categories :all})]
+      (is (= ["*.weird"] excludes))))
 
   (testing ":categories + :excludes (Noumenon-style: drop *.obj on top of :all)"
-    (let [out (ex/exclude-patterns {:categories     :all
-                                    :excludes ["*.obj"]})]
-      (is (some #{"*.png"} out))     ; built-in still present
-      (is (some #{"*.obj"} out))     ; explicit add wins
-      (is (not (some #{"*.svg"} out))))) ; still text — not in built-ins
+    (let [{:keys [excludes]}
+          (ex/exclude-patterns {:categories :all
+                                :excludes   ["*.obj"]})]
+      (is (some #{"*.png"} excludes))
+      (is (some #{"*.obj"} excludes))
+      (is (not (some #{"*.svg"} excludes)))))
 
-  (testing ":categories + :includes whitelists specific patterns from the union"
-    (let [out (ex/exclude-patterns {:categories :all
-                                    :includes   ["*.psd"]})]
-      (is (some #{"*.png"} out))
-      (is (not (some #{"*.psd"} out))))))
+  (testing ":categories + :includes preserves both lists for set-difference"
+    (let [{:keys [excludes includes]}
+          (ex/exclude-patterns {:categories :all
+                                :includes   ["*.psd"]})]
+      (is (some #{"*.png"} excludes))
+      (is (some #{"*.psd"} excludes))
+      (is (= ["*.psd"] includes)))))

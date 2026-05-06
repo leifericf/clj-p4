@@ -356,7 +356,6 @@
 
 (deftest excludes-applied-test
   (let [d  (tmp-dir)
-        ex (clj-p4.excludes/compile-patterns ["*.bin"])
         cl-with-bin
         {:p4/change 100 :p4/user "x" :p4/time 0 :p4/desc "with-bin"
          :p4/stream "//stream/main"
@@ -373,10 +372,10 @@
                     p4/describe     (constantly cl-with-bin)
                     p4/print-bytes! print-bytes-stub]
         (let [target (str (io/file d "repo"))]
-          (api/clone! {:conn    {:p4/port "h:1666"}
-                       :source  "//stream/main"
-                       :target  target
-                       :exclude ex})
+          (api/clone! {:conn     {:p4/port "h:1666"}
+                       :source   "//stream/main"
+                       :target   target
+                       :excludes ["*.bin"]})
           (let [{:keys [stdout-bytes]}
                 (proc/run-checked! ["git" "-C" target "ls-tree" "-r"
                                     "refs/heads/main"])
@@ -384,6 +383,52 @@
             (is (str/includes? listing "keep.cpp"))
             (is (not (str/includes? listing "drop.bin"))))))
       (finally (rm-rf d)))))
+
+(deftest includes-carve-out-test
+  (testing ":includes re-includes paths that :excludes would otherwise drop"
+    (let [d (tmp-dir)
+          ;; Stream view has to be root-wide so the path-pattern policy
+          ;; (not the view) is what filters Content/ paths.
+          root-mainline (assoc mainline :stream/paths [[:share "..."]])
+          cl {:p4/change 100 :p4/user "x" :p4/time 0 :p4/desc "init"
+              :p4/stream "//stream/main"
+              :p4/files [{:rev/depot "//stream/main/Content/drop.txt"
+                          :rev/rev 1 :rev/action :add :rev/type :text
+                          :rev/flags #{} :rev/keyword-flags #{}}
+                         {:rev/depot "//stream/main/Content/keep/foo.txt"
+                          :rev/rev 1 :rev/action :add :rev/type :text
+                          :rev/flags #{} :rev/keyword-flags #{}}
+                         {:rev/depot "//stream/main/Content/keep/sub/bar.txt"
+                          :rev/rev 1 :rev/action :add :rev/type :text
+                          :rev/flags #{} :rev/keyword-flags #{}}
+                         {:rev/depot "//stream/main/src/main.cpp"
+                          :rev/rev 1 :rev/action :add :rev/type :text
+                          :rev/flags #{} :rev/keyword-flags #{}}]}]
+      (try
+        (with-redefs [p4/info         (constantly info-2024)
+                      p4/stream-chain (constantly [root-mainline])
+                      p4/changes      (fn [_ _ & _] [{:p4/change 100}])
+                      p4/describe     (constantly cl)
+                      p4/print-bytes! print-bytes-stub]
+          (let [target (str (io/file d "repo"))]
+            (api/clone! {:conn     {:p4/port "h:1666"}
+                         :source   "//stream/main"
+                         :target   target
+                         :excludes ["Content/"]
+                         :includes ["Content/keep/"]})
+            (let [{:keys [stdout-bytes]}
+                  (proc/run-checked! ["git" "-C" target "ls-tree" "-r"
+                                      "refs/heads/main"])
+                  listing (String. ^bytes stdout-bytes "UTF-8")]
+              (is (str/includes? listing "src/main.cpp")
+                  "unrelated paths kept")
+              (is (str/includes? listing "Content/keep/foo.txt")
+                  "carve-out keeps Content/keep/ direct child")
+              (is (str/includes? listing "Content/keep/sub/bar.txt")
+                  "carve-out keeps Content/keep/ deep descendants")
+              (is (not (str/includes? listing "Content/drop.txt"))
+                  "non-carved-out Content/ paths are filtered"))))
+        (finally (rm-rf d))))))
 
 (deftest move-pair-emits-single-rename-test
   (testing "move/delete + move/add pair collapse to a single R rename"
@@ -1171,11 +1216,12 @@
           (is (contains? (ex-data e) :valid)))
         (finally (rm-rf d)))))
   (testing ":exclude-categories :all stays accepted"
-    ;; clj-kondo guard: don't actually run the clone here; only assert
-    ;; that resolve-exclude doesn't throw on the keyword shape.
-    (let [pats (#'api/resolve-exclude {:exclude-categories :all})]
-      (is (vector? pats))
-      (is (pos? (count pats))))))
+    (let [{:keys [excludes includes]}
+          (#'api/resolve-exclude {:exclude-categories :all})]
+      (is (vector? excludes))
+      (is (pos? (count excludes)))
+      (is (vector? includes))
+      (is (zero? (count includes))))))
 
 (deftest source-ref-override-test
   (testing ":source->ref overrides default basename-derived refs"

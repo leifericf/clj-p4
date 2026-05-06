@@ -34,14 +34,16 @@
                        :args         args})))))
 
 (defn- resolve-exclude
-  "Resolve the compiled `:exclude` vector for `clone!` / `fetch!`.
+  "Resolve the compiled exclude/include pattern lists for `clone!` /
+   `fetch!`.
 
    Composes three string-pattern sources: built-in categories
    (`:exclude-categories`), additional patterns to drop (`:excludes`),
-   and patterns to whitelist back in (`:includes`). They run through
-   `excludes/exclude-patterns` + `compile-patterns`.
+   and re-include carve-out patterns (`:includes`). They run through
+   `excludes/exclude-patterns` + `compile-patterns` per list.
 
-   Returns nil when no exclusion option is set."
+   Returns `{:excludes <compiled> :includes <compiled>}` (each a vector
+   of `[pattern regex]` pairs), or nil when no exclusion option is set."
   [{:keys [exclude-categories excludes includes]}]
   (when (set? exclude-categories)
     (let [valid   (excludes/binary-categories)
@@ -54,11 +56,13 @@
                  :unknown      unknown
                  :valid        valid})))))
   (when (or exclude-categories excludes includes)
-    (-> {:categories exclude-categories
-         :excludes   excludes
-         :includes   includes}
-        excludes/exclude-patterns
-        excludes/compile-patterns)))
+    (let [{:keys [excludes includes]}
+          (excludes/exclude-patterns
+           {:categories exclude-categories
+            :excludes   excludes
+            :includes   includes})]
+      {:excludes (excludes/compile-patterns excludes)
+       :includes (excludes/compile-patterns includes)})))
 
 (defn available?
   "True if `p4` is on PATH and answers `p4 -V`. Cheap and offline."
@@ -264,7 +268,7 @@
    passed to `p4 changes`. `stream-chain` is the parent-first list of
    stream specs the executor uses for view composition. `view-val` is
    a pre-built `View` (auto-view paths) or nil to derive from the chain."
-  [{:keys [target max-changes changes-block-size exclude ref
+  [{:keys [target max-changes changes-block-size excludes includes ref
            progress-fn stop?] :as ctx}
    clone-conn query-path stream-chain view-val]
   (let [mode     (:mode ctx)
@@ -278,7 +282,8 @@
                    :changelists  changes
                    :target       target
                    :view         view-val
-                   :excludes     exclude
+                   :excludes     excludes
+                   :includes     includes
                    :options      (build-options ctx)})]
     (git/init-bare! target)
     (let [final (run-fast-import! plan-val target clone-conn ref
@@ -476,11 +481,14 @@
                        :duplicates   dups}))))
   (assert-no-colliding-refs! "clone!" sources source->ref default-ref-of-source)
   (assert-target-empty! target)
-  (let [exclude' (resolve-exclude args)
+  (let [{compiled-excludes :excludes
+         compiled-includes :includes} (or (resolve-exclude args) {})
         base (-> args
-                 (dissoc :source :sources :source->ref :ref :exclude-categories)
+                 (dissoc :source :sources :source->ref :ref
+                         :exclude-categories :excludes :includes)
                  (assoc :progress-fn progress-fn :stop? stop?
-                        :exclude exclude'))
+                        :excludes compiled-excludes
+                        :includes compiled-includes))
         decoder (marshal/metadata-decoder
                  (or (:metadata-decoding-strategy args) :strict)
                  (:metadata-fallback-encoding args))]
@@ -523,7 +531,7 @@
    `:since` to filter `p4 changes`, builds a `sync-plan` (P4 vocabulary
    inside the plan layer), skips `init-bare!`, and folds the change
    count into the returned `repo-state`."
-  [{:keys [target since changes-block-size exclude ref
+  [{:keys [target since changes-block-size excludes includes ref
            progress-fn stop?] :as ctx}
    fetch-conn query-path stream-chain view-val]
   (let [mode        (:mode ctx)
@@ -538,7 +546,8 @@
                        :changelists  new-changes
                        :target       target
                        :view         view-val
-                       :excludes     exclude
+                       :excludes     excludes
+                       :includes     includes
                        :since-change since
                        :options      (build-options ctx)})]
         (run-fast-import! plan-val target fetch-conn ref progress-fn stop?)
@@ -639,11 +648,14 @@
                        :sources      sources
                        :duplicates   dups}))))
   (assert-no-colliding-refs! "fetch!" sources source->ref default-ref-of-source)
-  (let [exclude' (resolve-exclude args)
+  (let [{compiled-excludes :excludes
+         compiled-includes :includes} (or (resolve-exclude args) {})
         base (-> args
-                 (dissoc :source :sources :source->ref :ref :exclude-categories)
+                 (dissoc :source :sources :source->ref :ref
+                         :exclude-categories :excludes :includes)
                  (assoc :progress-fn progress-fn :stop? stop?
-                        :exclude exclude'))
+                        :excludes compiled-excludes
+                        :includes compiled-includes))
         decoder (marshal/metadata-decoder
                  (or (:metadata-decoding-strategy args) :strict)
                  (:metadata-fallback-encoding args))]

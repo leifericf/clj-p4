@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Changed (breaking)
+
+- `:extra-excludes` renamed to `:excludes`. Pairs symmetrically with
+  `:includes` and drops the now-misleading "extra" qualifier.
+- `:includes` semantics changed. It used to remove pattern strings from
+  the union of `:exclude-categories ∪ :extra-excludes` by exact string
+  equality, which made it useless for path-level carve-outs. It is now
+  a re-include carve-out evaluated at match time against each candidate
+  path: a path is filtered out iff some `:excludes` pattern matches AND
+  no `:includes` pattern matches (gitignore-style set difference).
+  `:exclude-categories :all` + `:includes ["*.psd"]` still keeps PSDs
+  (any path matching `*.psd` re-includes); the new shape additionally
+  enables path-level use like `:excludes ["Content/"] :includes
+  ["Content/keep/"]` to drop one subtree while keeping a nested
+  carve-out.
+- The low-level pre-compiled `:exclude` escape hatch (a vector of
+  `[pattern regex]` pairs the caller built via
+  `clj-p4.excludes/compile-patterns`) has been removed. The high-level
+  string-pattern keys cover every reasonable use case; clj-p4 owns
+  pattern compilation. The `:exclude-and-high-level-set` boundary
+  check is gone.
+- `clj-p4.excludes/exclude-patterns` now returns
+  `{:excludes [str…] :includes [str…]}` instead of a single deduped
+  vector with includes-removed.
+
 ## 0.5.1-alpha
 
 Hardening pass driven by an adversarial-test sweep. Eleven boundary
