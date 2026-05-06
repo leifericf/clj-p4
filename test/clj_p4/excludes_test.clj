@@ -8,27 +8,27 @@
            (ex/exclude-patterns
             {:resource {:executables ["*.exe" "*.dll"]
                         :archives    ["*.zip"]}
-             :extra-excludes ["*.bak"]}))))
+             :excludes ["*.bak"]}))))
 
   (testing "no-default-excludes? drops resource"
     (is (= ["*.bak"]
            (ex/exclude-patterns
             {:resource {:executables ["*.exe"]}
              :no-default-excludes? true
-             :extra-excludes ["*.bak"]}))))
+             :excludes ["*.bak"]}))))
 
   (testing "includes whitelist"
     (is (= ["*.dll" "*.bak"]
            (ex/exclude-patterns
             {:resource {:executables ["*.exe" "*.dll"]}
-             :extra-excludes ["*.bak"]
+             :excludes ["*.bak"]
              :includes ["*.exe"]}))))
 
   (testing "dedupe"
     (is (= ["*.exe"]
            (ex/exclude-patterns
             {:resource {:a ["*.exe"] :b ["*.exe"]}
-             :extra-excludes ["*.exe"]})))))
+             :excludes ["*.exe"]})))))
 
 (deftest pattern->re-test
   (testing "*.ext at any depth"
@@ -130,9 +130,9 @@
       (is (some #{"*.psd"} out))
       (is (not (some #{"*.png"} out)))))
 
-  (testing ":categories with :extra-excludes appends after built-ins"
+  (testing ":categories with :excludes appends after built-ins"
     (let [out (ex/exclude-patterns {:categories #{:images}
-                                    :extra-excludes ["*.myfmt"]})]
+                                    :excludes ["*.myfmt"]})]
       (is (some #{"*.png"} out))
       (is (some #{"*.myfmt"} out))))
 
@@ -141,9 +141,9 @@
                                     :categories :all})]
       (is (= ["*.weird"] out))))
 
-  (testing ":categories + :extra-excludes (Noumenon-style: drop *.obj on top of :all)"
+  (testing ":categories + :excludes (Noumenon-style: drop *.obj on top of :all)"
     (let [out (ex/exclude-patterns {:categories     :all
-                                    :extra-excludes ["*.obj"]})]
+                                    :excludes ["*.obj"]})]
       (is (some #{"*.png"} out))     ; built-in still present
       (is (some #{"*.obj"} out))     ; explicit add wins
       (is (not (some #{"*.svg"} out))))) ; still text — not in built-ins

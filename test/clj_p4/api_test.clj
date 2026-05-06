@@ -1120,7 +1120,7 @@
                           :exclude            (clj-p4.excludes/compile-patterns ["*.bin"])
                           :exclude-categories :all})))
         (finally (rm-rf d)))))
-  (testing "passing :exclude alongside :extra-excludes throws"
+  (testing "passing :exclude alongside :excludes throws"
     (let [d (tmp-dir)
           target (str (io/file d "repo"))]
       (try
@@ -1130,7 +1130,7 @@
                           :source         "//stream/main"
                           :target         target
                           :exclude        (clj-p4.excludes/compile-patterns ["*.bin"])
-                          :extra-excludes ["*.obj"]})))
+                          :excludes ["*.obj"]})))
         (finally (rm-rf d)))))
   (testing "passing :exclude alongside :includes throws"
     (let [d (tmp-dir)

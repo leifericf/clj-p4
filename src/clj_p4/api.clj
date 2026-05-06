@@ -38,7 +38,7 @@
 
    The high-level path composes three string-pattern sources: built-in
    categories (`:exclude-categories`), additional patterns to drop
-   (`:extra-excludes`), and patterns to whitelist back in (`:includes`).
+   (`:excludes`), and patterns to whitelist back in (`:includes`).
    They run through `excludes/exclude-patterns` + `compile-patterns`.
 
    The low-level path is `:exclude` — a vector of already-compiled
@@ -47,17 +47,17 @@
    ordering and override semantics stay unambiguous.
 
    Returns nil when no exclusion option is set."
-  [{:keys [exclude exclude-categories extra-excludes includes]}]
-  (let [high-level? (or exclude-categories extra-excludes includes)]
+  [{:keys [exclude exclude-categories excludes includes]}]
+  (let [high-level? (or exclude-categories excludes includes)]
     (when (and exclude high-level?)
       (throw (ex-info
               (str ":exclude (pre-compiled patterns) is mutually exclusive "
-                   "with :exclude-categories / :extra-excludes / :includes "
+                   "with :exclude-categories / :excludes / :includes "
                    "— pass one set of inputs or the other")
               {:clj-p4/error       :exclude-and-high-level-set
                :exclude            exclude
                :exclude-categories exclude-categories
-               :extra-excludes     extra-excludes
+               :excludes           excludes
                :includes           includes})))
     (when (set? exclude-categories)
       (let [valid   (excludes/binary-categories)
@@ -71,9 +71,9 @@
                    :valid        valid})))))
     (cond
       exclude     exclude
-      high-level? (-> {:categories     exclude-categories
-                       :extra-excludes extra-excludes
-                       :includes       includes}
+      high-level? (-> {:categories exclude-categories
+                       :excludes   excludes
+                       :includes   includes}
                       excludes/exclude-patterns
                       excludes/compile-patterns))))
 
@@ -436,9 +436,9 @@
      :exclude-categories `:all` or a set of category keywords (e.g.
                         `#{:images :audio}`) selecting from clj-p4's
                         built-in `binaries.edn`. Composes with
-                        `:extra-excludes`, `:includes`, and
+                        `:excludes`, `:includes`, and
                         `:exclude-binaries?`.
-     :extra-excludes    seq of pattern strings to add on top of
+     :excludes          seq of pattern strings to add on top of
                         `:exclude-categories` (or used standalone).
                         Same gitignore-flavoured grammar as the
                         built-in patterns. E.g. `[\"*.obj\"]` to drop

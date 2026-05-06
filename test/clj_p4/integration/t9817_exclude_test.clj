@@ -24,7 +24,7 @@
         compiled  (excludes/compile-patterns
                    (excludes/exclude-patterns
                     {:no-default-excludes? true
-                     :extra-excludes ["src/oddly named/"]}))]
+                     :excludes ["src/oddly named/"]}))]
     (api/clone! {:conn conn :source "//stream/main" :target without})
     (api/clone! {:conn conn :source "//stream/main" :target with
                  :exclude compiled})

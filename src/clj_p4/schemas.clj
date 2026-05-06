@@ -232,7 +232,7 @@
    [:exclude-binaries? {:optional true} [:maybe boolean?]]
    [:exclude-categories {:optional true}
     [:maybe [:or [:= :all] [:set keyword?]]]]
-   [:extra-excludes {:optional true} [:maybe [:sequential string?]]]
+   [:excludes {:optional true} [:maybe [:sequential string?]]]
    [:includes {:optional true} [:maybe [:sequential string?]]]
    [:fetch-parallelism {:optional true} [:maybe pos-int?]]
    [:max-print-bytes {:optional true} [:maybe pos-int?]]

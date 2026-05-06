@@ -89,19 +89,19 @@
      :no-default-excludes? — skip the resource's patterns when `:categories`
                              is absent. Has no effect on an explicit
                              `:categories` selection.
-     :extra-excludes       — additional patterns to add.
+     :excludes             — additional patterns to add.
      :includes             — patterns to remove from the union (whitelist).
 
    Returns a deduped vector of pattern strings, in stable order:
    resource patterns first (category iteration order), then extras."
-  [{:keys [categories resource no-default-excludes? extra-excludes includes]}]
+  [{:keys [categories resource no-default-excludes? excludes includes]}]
   (let [universe (or resource
                      (when categories @builtin-binaries-resource))
         defaults (cond
                    categories             (select-categories universe categories)
                    no-default-excludes?   nil
                    :else                  (apply concat (vals (or universe {}))))
-        all         (concat defaults extra-excludes)
+        all         (concat defaults excludes)
         include-set (set includes)]
     (->> all (remove include-set) distinct vec)))
 

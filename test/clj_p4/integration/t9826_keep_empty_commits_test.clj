@@ -38,7 +38,7 @@
         excludes  (excludes/compile-patterns
                    (excludes/exclude-patterns
                     {:no-default-excludes? true
-                     :extra-excludes ["src/oddly named/"]}))]
+                     :excludes ["src/oddly named/"]}))]
     ;; Baseline: no exclusion. All CLs land.
     (api/clone! {:conn conn :source "//stream/main" :target baseline})
     ;; Default: exclusion AND no flag. Change 7 has no remaining files;
