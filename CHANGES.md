@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.6.0-alpha
+
+Path-pattern policy reworked. `:extra-excludes` is now `:excludes`,
+`:includes` becomes a gitignore-style re-include carve-out
+(set-difference at match time, not pattern-string removal), and the
+low-level pre-compiled `:exclude` escape hatch is gone. Code passing
+the old keys now fails loud at the boundary so an upgrade does not
+silently regress to importing the binaries the caller thought were
+filtered. Documentation updated alongside.
+
 ### Changed (breaking)
 
 - `:extra-excludes` renamed to `:excludes`. Pairs symmetrically with
