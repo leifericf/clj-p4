@@ -1,12 +1,11 @@
 (ns clj-p4.integration.t9817-exclude-test
-  "Mirror of git-p4's `t/t9817-git-p4-exclude.sh`: `:exclude` patterns
+  "Mirror of git-p4's `t/t9817-git-p4-exclude.sh`: `:excludes` patterns
    drop matched paths from the imported tree but leave the rest intact.
    Compared against an unfiltered baseline clone of the same depot to
    prove the exclusion (and only the exclusion) caused the difference."
   (:require [clojure.test :refer [deftest is testing use-fixtures]]
             [clojure.java.io :as io]
             [clj-p4.api :as api]
-            [clj-p4.excludes :as excludes]
             [clj-p4.integration.fixture :as fix]
             [clj-p4.integration.git-assert :as ga]))
 
@@ -20,14 +19,10 @@
   (let [conn      (fix/admin-conn-with-ticket)
         base-dir  (ga/tmp-dir "clj-p4-t9817")
         without   (str (io/file base-dir "without.git"))
-        with      (str (io/file base-dir "with.git"))
-        compiled  (excludes/compile-patterns
-                   (excludes/exclude-patterns
-                    {:no-default-excludes? true
-                     :excludes ["src/oddly named/"]}))]
+        with      (str (io/file base-dir "with.git"))]
     (api/clone! {:conn conn :source "//stream/main" :target without})
     (api/clone! {:conn conn :source "//stream/main" :target with
-                 :exclude compiled})
+                 :excludes ["src/oddly named/"]})
     (let [unfiltered (set (map :path (ga/ls-tree without "refs/heads/main")))
           filtered   (set (map :path (ga/ls-tree with    "refs/heads/main")))]
       (testing "baseline clone contains the soon-to-be-excluded subtree"

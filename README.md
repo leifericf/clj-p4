@@ -41,12 +41,11 @@ clj-p4 is strictly P4 to Git. It will never issue a Perforce command that mutate
 | `:exclude-categories` | `:all` or a set of category keywords (`#{:images :audio :video :models :archives :fonts :documents :compiled :engine-assets}`) selecting from clj-p4's built-in `binaries.edn`. Composes with `:excludes`, `:includes`, and `:exclude-binaries?`. |
 | `:excludes` | Seq of pattern strings to add on top of `:exclude-categories` (or used standalone). E.g. `["*.obj"]` to drop text Wavefront mesh dumps without dropping the rest of your text formats. |
 | `:includes` | Seq of pattern strings to whitelist back in, removing them from the union of categories + extras. E.g. `["*.psd"]` with `:exclude-categories :all` keeps PSDs as source. |
-| `:exclude` | Vector of `[pattern regex]` filtering files at clone time (output of `clj-p4.excludes/compile-patterns`). Low-level escape hatch; mutually exclusive with the higher-level pattern options above. |
 | `:fetch-parallelism` | Parallel `p4 print` workers per changelist (`pmap`). |
 | `:max-print-bytes` | Per-file `p4 print` cap; throws `:clj-p4/error :max-print-bytes-exceeded` above. |
 | `:lookahead` | Background `p4 describe` futures prefetching upcoming changelists. |
 | `:no-merge?` | Disable integrate-as-2-parent merge detection. |
-| `:keep-empty-commits?` | Default `false` — skip the commit when a CL produces zero file ops after view + `:exclude` filtering. Set to `true` to emit empty commits. |
+| `:keep-empty-commits?` | Default `false` — skip the commit when a CL produces zero file ops after view + `:excludes` filtering. Set to `true` to emit empty commits. |
 | `:changes-block-size` | Walk `p4 changes` in fixed-size CL windows. Required when the user is in a group with `MaxResults` / `MaxScanRows` low enough to refuse an unbounded query. |
 | `:metadata-decoding-strategy` | `:strict` (default), `:fallback`, or `:passthrough`. Controls how marshal/JSON byte payloads (descriptions, usernames) decode into strings. Only matters against non-unicode-mode p4d. |
 | `:metadata-fallback-encoding` | Charset name (default `"CP1252"`). Used by the `:fallback` strategy when UTF-8 decoding fails. |
@@ -199,8 +198,6 @@ Most projects don't fit a single category neatly — text-form files like `.obj`
 ;; No categories — just a few custom patterns.
 (clj-p4/clone! {... :excludes ["*.cache" "*.bak"]})
 ```
-
-For full control of the category map (or to ignore the built-in altogether), call `clj-p4.excludes/exclude-patterns` directly with `:resource` set to your own category → patterns map, compile with `clj-p4.excludes/compile-patterns`, and pass the result as `:exclude`. This low-level path is mutually exclusive with the higher-level `:exclude-categories` / `:excludes` / `:includes` options.
 
 ### What gets filtered server-side?
 

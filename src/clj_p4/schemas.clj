@@ -228,7 +228,6 @@
    [:sources {:optional true} [:sequential depot-path]]
    [:source->ref {:optional true} [:map-of depot-path string?]]
    [:max-changes {:optional true} [:maybe pos-int?]]
-   [:exclude {:optional true} [:maybe vector?]]
    [:exclude-binaries? {:optional true} [:maybe boolean?]]
    [:exclude-categories {:optional true}
     [:maybe [:or [:= :all] [:set keyword?]]]]

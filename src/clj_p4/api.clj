@@ -36,46 +36,29 @@
 (defn- resolve-exclude
   "Resolve the compiled `:exclude` vector for `clone!` / `fetch!`.
 
-   The high-level path composes three string-pattern sources: built-in
-   categories (`:exclude-categories`), additional patterns to drop
-   (`:excludes`), and patterns to whitelist back in (`:includes`).
-   They run through `excludes/exclude-patterns` + `compile-patterns`.
-
-   The low-level path is `:exclude` — a vector of already-compiled
-   `[pattern regex]` pairs the caller built themselves. It is mutually
-   exclusive with the high-level keys: pass one *or* the other so
-   ordering and override semantics stay unambiguous.
+   Composes three string-pattern sources: built-in categories
+   (`:exclude-categories`), additional patterns to drop (`:excludes`),
+   and patterns to whitelist back in (`:includes`). They run through
+   `excludes/exclude-patterns` + `compile-patterns`.
 
    Returns nil when no exclusion option is set."
-  [{:keys [exclude exclude-categories excludes includes]}]
-  (let [high-level? (or exclude-categories excludes includes)]
-    (when (and exclude high-level?)
-      (throw (ex-info
-              (str ":exclude (pre-compiled patterns) is mutually exclusive "
-                   "with :exclude-categories / :excludes / :includes "
-                   "— pass one set of inputs or the other")
-              {:clj-p4/error       :exclude-and-high-level-set
-               :exclude            exclude
-               :exclude-categories exclude-categories
-               :excludes           excludes
-               :includes           includes})))
-    (when (set? exclude-categories)
-      (let [valid   (excludes/binary-categories)
-            unknown (into #{} (remove valid) exclude-categories)]
-        (when (seq unknown)
-          (throw (ex-info
-                  (str ":exclude-categories has unknown keyword(s) "
-                       (pr-str unknown) "; valid keys are " (pr-str valid))
-                  {:clj-p4/error :unknown-exclude-category
-                   :unknown      unknown
-                   :valid        valid})))))
-    (cond
-      exclude     exclude
-      high-level? (-> {:categories exclude-categories
-                       :excludes   excludes
-                       :includes   includes}
-                      excludes/exclude-patterns
-                      excludes/compile-patterns))))
+  [{:keys [exclude-categories excludes includes]}]
+  (when (set? exclude-categories)
+    (let [valid   (excludes/binary-categories)
+          unknown (into #{} (remove valid) exclude-categories)]
+      (when (seq unknown)
+        (throw (ex-info
+                (str ":exclude-categories has unknown keyword(s) "
+                     (pr-str unknown) "; valid keys are " (pr-str valid))
+                {:clj-p4/error :unknown-exclude-category
+                 :unknown      unknown
+                 :valid        valid})))))
+  (when (or exclude-categories excludes includes)
+    (-> {:categories exclude-categories
+         :excludes   excludes
+         :includes   includes}
+        excludes/exclude-patterns
+        excludes/compile-patterns)))
 
 (defn available?
   "True if `p4` is on PATH and answers `p4 -V`. Cheap and offline."
@@ -449,11 +432,6 @@
                         extras. E.g. `[\"*.psd\"]` with
                         `:exclude-categories :all` keeps PSDs as
                         source while dropping every other image.
-     :exclude           pre-compiled exclude patterns (vector of
-                        `[pat re]`, output of
-                        `clj-p4.excludes/compile-patterns`). Low-level
-                        escape hatch; mutually exclusive with the
-                        higher-level pattern options above.
      :fetch-parallelism N parallel `p4 print` calls per changelist (1 = sequential)
      :max-print-bytes   cap on per-file `p4 print` size; throws above
      :lookahead         N upcoming changelists to `p4 describe` in parallel
@@ -474,7 +452,7 @@
    user-supplied source path, not the ephemeral client name."
   [{:keys [conn target ref
            source sources source->ref
-           max-changes exclude
+           max-changes
            fetch-parallelism max-print-bytes user-map emit-labels?
            lookahead no-merge? progress-fn stop?]
     :or   {ref         "refs/heads/main"
@@ -639,7 +617,6 @@
    number of new commits appended (zero is a valid no-op result)."
   [{:keys [conn target ref
            source sources source->ref
-           exclude
            fetch-parallelism max-print-bytes user-map lookahead no-merge?
            progress-fn stop?]
     :or   {ref         "refs/heads/main"
