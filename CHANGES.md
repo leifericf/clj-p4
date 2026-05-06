@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.1-alpha
+
 ### Added
 
 - `:audio` category now also matches Wwise (Audiokinetic) audio
