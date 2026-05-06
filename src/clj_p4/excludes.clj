@@ -1,7 +1,7 @@
 (ns clj-p4.excludes
   "Client-side file filtering, separate from a stream's own
    `:stream/ignored` list. Used to drop binary noise (build artefacts,
-   asset binaries, etc.) at clone time.
+   asset binaries, etc.) and to carve out subtrees at clone time.
 
    Two complementary mechanisms:
 
@@ -14,7 +14,10 @@
        P4 `*` and `%n` — same semantics as in `clj-p4.view`
      Built-in categorised lists (`:images`, `:audio`, …) ship in
      `resources/clj_p4/excludes/binaries.edn` and are selected via the
-     `:categories` option on `exclude-patterns`.
+     `:categories` option on `exclude-patterns`. The resolver returns
+     two parallel lists (`:excludes` and `:includes`); a path is
+     dropped iff some `:excludes` matches AND no `:includes` matches
+     (gitignore-style set difference).
    - **Type-based predicate.** `binary-rev?` consults P4's per-revision
      `:rev/type` (parsed from `p4 describe -s`) to drop revs P4 itself
      classifies as binary — `:binary`, `:apple`, `:resource`. Catches

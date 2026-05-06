@@ -47,7 +47,7 @@ is read-only) are skipped.
 | t9814 | implemented | rename detection ↔ p4 move |
 | t9815 | N/A: write-direction | submit-fail handling |
 | t9816 | N/A: write-direction | locked files in submit flow |
-| t9817 | implemented | path exclusion via `:exclude` |
+| t9817 | implemented | path exclusion via `:excludes` |
 | t9818 | implemented | block-mode change fetching (`:changes-block-size`) |
 | t9819 | implemented | case-folding behaviour (lowercase round-trip; `-C1` rejection deferred — needs a third fixture) |
 | t9820 | N/A: architecture | submit editor handling |

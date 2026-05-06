@@ -432,11 +432,12 @@
                         built-in patterns. E.g. `[\"*.obj\"]` to drop
                         text Wavefront mesh dumps in a depot whose
                         project/solution files you otherwise want kept.
-     :includes          seq of pattern strings to whitelist back in,
-                        removing them from the union of categories +
-                        extras. E.g. `[\"*.psd\"]` with
-                        `:exclude-categories :all` keeps PSDs as
-                        source while dropping every other image.
+     :includes          seq of re-include carve-out patterns. A path is
+                        filtered iff some exclude pattern matches AND
+                        no include pattern matches (gitignore-style set
+                        difference). E.g. `[\"Content/keep/\"]` paired
+                        with `:excludes [\"Content/\"]` drops every
+                        `Content/` subtree except `Content/keep/`.
      :fetch-parallelism N parallel `p4 print` calls per changelist (1 = sequential)
      :max-print-bytes   cap on per-file `p4 print` size; throws above
      :lookahead         N upcoming changelists to `p4 describe` in parallel

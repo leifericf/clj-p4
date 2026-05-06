@@ -39,8 +39,8 @@ clj-p4 is strictly P4 to Git. It will never issue a Perforce command that mutate
 | `:max-changes` | Cap on number of changelists imported. *(`clone!` only.)* |
 | `:exclude-binaries?` | Drop revisions Perforce itself classifies as binary (`:rev/type` ∈ `:binary` / `:apple` / `:resource`). Default `true` — see [Filtering binaries](#filtering-binaries) for why. Set to `false` to import every revision regardless of type. |
 | `:exclude-categories` | `:all` or a set of category keywords (`#{:images :audio :video :models :archives :fonts :documents :compiled :engine-assets}`) selecting from clj-p4's built-in `binaries.edn`. Composes with `:excludes`, `:includes`, and `:exclude-binaries?`. |
-| `:excludes` | Seq of pattern strings to add on top of `:exclude-categories` (or used standalone). E.g. `["*.obj"]` to drop text Wavefront mesh dumps without dropping the rest of your text formats. |
-| `:includes` | Seq of pattern strings to whitelist back in, removing them from the union of categories + extras. E.g. `["*.psd"]` with `:exclude-categories :all` keeps PSDs as source. |
+| `:excludes` | Seq of pattern strings — paths matching any of these are dropped at clone time. Composes with `:exclude-categories`. Gitignore-flavoured grammar: `*.ext`, `name`, `dir/` (any depth), `/anchored`, P4-style `foo/...`. E.g. `["Content/" "*.tmp"]`. |
+| `:includes` | Seq of re-include carve-out patterns. A path is filtered out iff some `:excludes` (or `:exclude-categories`) entry matches AND no `:includes` entry matches — gitignore-style set difference. E.g. `:excludes ["Content/"] :includes ["Content/keep/"]` drops every `Content/` subtree except `Content/keep/`. |
 | `:fetch-parallelism` | Parallel `p4 print` workers per changelist (`pmap`). |
 | `:max-print-bytes` | Per-file `p4 print` cap; throws `:clj-p4/error :max-print-bytes-exceeded` above. |
 | `:lookahead` | Background `p4 describe` futures prefetching upcoming changelists. |
@@ -179,7 +179,9 @@ The curated list is deliberately conservative: an extension only appears here if
 
 ### Mixing categories with custom patterns
 
-Most projects don't fit a single category neatly — text-form files like `.obj` (Wavefront mesh) or `.gltf` (JSON model) might be noise in one repo and a hand-edited source in another. Compose the built-in categories with your own patterns via `:excludes` (drop more) and `:includes` (keep specific patterns from the union):
+Most projects don't fit a single category neatly — text-form files like `.obj` (Wavefront mesh) or `.gltf` (JSON model) might be noise in one repo and a hand-edited source in another. Compose the built-in categories with your own patterns via `:excludes` (drop more) and `:includes` (re-include carve-outs).
+
+A path is filtered out iff some `:exclude-categories ∪ :excludes` entry matches **and** no `:includes` entry matches — same set-difference rule gitignore uses. Both lists run against every candidate path; `:includes` is *not* a string-removal whitelist, it's a per-path re-include.
 
 ```clojure
 ;; Code-analysis import: keep .sln/.csproj (analysis input) but drop
@@ -188,10 +190,15 @@ Most projects don't fit a single category neatly — text-form files like `.obj`
                 :source "//depot/game/main"
                 :target "/tmp/game.git"
                 :exclude-categories :all
-                :excludes     ["*.obj"]})
+                :excludes           ["*.obj"]})
 
-;; Web app import: drop most binaries but keep PSD sources for the
-;; design team's history.
+;; Path-level carve-out: greedy clone of the depot root, except the
+;; bulky Content/ subtree — but keep Content/keep/ for the level
+;; designers' history.
+(clj-p4/clone! {... :excludes ["Content/"]
+                    :includes ["Content/keep/"]})
+
+;; Filetype-level carve-out: drop most binaries, keep PSD sources.
 (clj-p4/clone! {... :exclude-categories :all
                     :includes           ["*.psd"]})
 
