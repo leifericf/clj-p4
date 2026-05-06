@@ -183,6 +183,8 @@ Most projects don't fit a single category neatly — text-form files like `.obj`
 
 A path is filtered out iff some `:exclude-categories ∪ :excludes` entry matches **and** no `:includes` entry matches — same set-difference rule gitignore uses. Both lists run against every candidate path; `:includes` is *not* a string-removal whitelist, it's a per-path re-include.
 
+`:includes` only carves out the path-pattern policy. The type-based filter (`:exclude-binaries?`, default `true`) is independent — a `*.psd` revision whose `:rev/type` is `:binary` is still dropped even if `:includes` matches its path. To keep binary-typed files, you also have to set `:exclude-binaries? false`.
+
 ```clojure
 ;; Code-analysis import: keep .sln/.csproj (analysis input) but drop
 ;; large .obj mesh dumps that aren't useful for review.
@@ -199,8 +201,11 @@ A path is filtered out iff some `:exclude-categories ∪ :excludes` entry matche
                     :includes ["Content/keep/"]})
 
 ;; Filetype-level carve-out: drop most binaries, keep PSD sources.
+;; :exclude-binaries? must be off — otherwise the type filter drops
+;; PSDs (their :rev/type is :binary) regardless of :includes.
 (clj-p4/clone! {... :exclude-categories :all
-                    :includes           ["*.psd"]})
+                    :includes           ["*.psd"]
+                    :exclude-binaries?  false})
 
 ;; No categories — just a few custom patterns.
 (clj-p4/clone! {... :excludes ["*.cache" "*.bak"]})
