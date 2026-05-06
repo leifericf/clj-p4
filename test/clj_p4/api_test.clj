@@ -1070,16 +1070,16 @@
             (is (= #{"//d/main" "//e/main"}
                    (set (mapcat :sources colls))))))
         ;; Same shape, but :source->ref disambiguates one — collision check
-        ;; should pass. P4 will then fail with :proc-failed (no real server).
+        ;; should pass. P4 will then fail at I/O time (no binary in CI, no
+        ;; real server locally — either way, not :colliding-source-refs).
         (let [e (try (api/clone! {:conn        {:p4/port "h:1666"}
                                   :target      target
                                   :sources     ["//d/main" "//e/main"]
                                   :source->ref {"//e/main" "refs/heads/e-main"}})
                      :no-throw
-                     (catch clojure.lang.ExceptionInfo e e))]
-          (is (instance? clojure.lang.ExceptionInfo e))
-          (is (not= :colliding-source-refs (:clj-p4/error (ex-data e))))
-          (is (= :proc-failed (:clj-p4/error (ex-data e)))))
+                     (catch Throwable t t))]
+          (is (instance? Throwable e))
+          (is (not= :colliding-source-refs (:clj-p4/error (ex-data e)))))
         ;; Override that maps two sources to the same ref still collides.
         (let [e (try (api/clone! {:conn        {:p4/port "h:1666"}
                                   :target      target
