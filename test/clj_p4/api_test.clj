@@ -1223,6 +1223,38 @@
       (is (vector? includes))
       (is (zero? (count includes))))))
 
+(deftest legacy-exclude-key-rejected-test
+  (testing "passing :exclude (the removed pre-compiled vector) throws"
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))]
+      (try
+        (let [e (try (api/clone! {:conn   {:p4/port "h:1666"}
+                                  :source "//stream/main"
+                                  :target target
+                                  :exclude (clj-p4.excludes/compile-patterns ["*.bin"])})
+                     :no-throw
+                     (catch clojure.lang.ExceptionInfo e e))]
+          (is (instance? clojure.lang.ExceptionInfo e))
+          (is (= :legacy-exclude-removed (:clj-p4/error (ex-data e)))))
+        (finally (rm-rf d))))
+    (let [d (tmp-dir)
+          target (str (io/file d "repo"))]
+      (try
+        (let [e (try (api/fetch! {:conn   {:p4/port "h:1666"}
+                                  :source "//stream/main"
+                                  :target target
+                                  :exclude (clj-p4.excludes/compile-patterns ["*.bin"])})
+                     :no-throw
+                     (catch clojure.lang.ExceptionInfo e e))]
+          (is (instance? clojure.lang.ExceptionInfo e))
+          (is (= :legacy-exclude-removed (:clj-p4/error (ex-data e)))))
+        (finally (rm-rf d)))))
+  (testing "passing :exclude nil is accepted (treated as not-set)"
+    (let [{:keys [excludes includes]}
+          (#'api/resolve-exclude {:exclude nil :excludes ["*.bin"]})]
+      (is (= 1 (count excludes)))
+      (is (zero? (count includes))))))
+
 (deftest source-ref-override-test
   (testing ":source->ref overrides default basename-derived refs"
     (let [d (tmp-dir)

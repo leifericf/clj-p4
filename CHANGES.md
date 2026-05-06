@@ -22,7 +22,10 @@
   `clj-p4.excludes/compile-patterns`) has been removed. The high-level
   string-pattern keys cover every reasonable use case; clj-p4 owns
   pattern compilation. The `:exclude-and-high-level-set` boundary
-  check is gone.
+  check is gone. Code that still passes `:exclude` now throws
+  `:clj-p4/error :legacy-exclude-removed` at the boundary so an
+  upgrade does not silently regress to importing the binaries the
+  caller thought were filtered.
 - `clj-p4.excludes/exclude-patterns` now returns
   `{:excludes [str…] :includes [str…]}` instead of a single deduped
   vector with includes-removed.

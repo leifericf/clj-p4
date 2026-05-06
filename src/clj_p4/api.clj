@@ -44,7 +44,13 @@
 
    Returns `{:excludes <compiled> :includes <compiled>}` (each a vector
    of `[pattern regex]` pairs), or nil when no exclusion option is set."
-  [{:keys [exclude-categories excludes includes]}]
+  [{:keys [exclude-categories excludes includes] :as args}]
+  (when (some? (:exclude args))
+    (throw (ex-info
+            (str ":exclude (pre-compiled pattern vector) was removed; "
+                 "use :excludes with pattern strings instead")
+            {:clj-p4/error :legacy-exclude-removed
+             :exclude      (:exclude args)})))
   (when (set? exclude-categories)
     (let [valid   (excludes/binary-categories)
           unknown (into #{} (remove valid) exclude-categories)]
