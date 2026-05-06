@@ -38,7 +38,7 @@ clj-p4 is strictly P4 to Git. It will never issue a Perforce command that mutate
 | `:ref` | Single-source destination ref. Default `refs/heads/main`. |
 | `:max-changes` | Cap on number of changelists imported. *(`clone!` only.)* |
 | `:exclude-binaries?` | Drop revisions Perforce itself classifies as binary (`:rev/type` ∈ `:binary` / `:apple` / `:resource`). Default `true` — see [Filtering binaries](#filtering-binaries) for why. Set to `false` to import every revision regardless of type. |
-| `:exclude-categories` | `:all` or a set of category keywords (`#{:images :audio :video :models :archives :fonts :documents :compiled :engine-assets}`) selecting from clj-p4's built-in `binaries.edn`. Composes with `:excludes`, `:includes`, and `:exclude-binaries?`. |
+| `:exclude-categories` | `:all` or a set of category keywords (`#{:images :audio :video :models :archives :fonts :documents :compiled :engine-assets}`) selecting from clj-p4's built-in binary category set. Composes with `:excludes`, `:includes`, and `:exclude-binaries?`. |
 | `:excludes` | Seq of pattern strings — paths matching any of these are dropped at clone time. Composes with `:exclude-categories`. Gitignore-flavoured grammar: `*.ext`, `name`, `dir/` (any depth), `/anchored`, P4-style `foo/...`. E.g. `["Content/" "*.tmp"]`. |
 | `:includes` | Seq of re-include carve-out patterns. A path is filtered out iff some `:excludes` (or `:exclude-categories`) entry matches AND no `:includes` entry matches — gitignore-style set difference. E.g. `:excludes ["Content/"] :includes ["Content/keep/"]` drops every `Content/` subtree except `Content/keep/`. |
 | `:fetch-parallelism` | Parallel `p4 print` workers per changelist (`pmap`). |
@@ -156,7 +156,7 @@ Trust the type filter when you want a maintenance-free catch-all. Distrust it (o
 
 ### Categorised extension lists — `:exclude-categories`
 
-A built-in `binaries.edn` ships nine generic categories. Pass `:all` or a subset:
+A built-in binary category set ships nine generic categories. Pass `:all` or a subset:
 
 ```clojure
 (clj-p4/clone! {... :exclude-categories :all})            ; every category
@@ -166,7 +166,7 @@ A built-in `binaries.edn` ships nine generic categories. Pass `:all` or a subset
 | Category | Examples |
 | --- | --- |
 | `:images` | `*.png` `*.jpg` `*.psd` `*.exr` … |
-| `:audio` | `*.wav` `*.mp3` `*.ogg` `*.flac` … |
+| `:audio` | `*.wav` `*.mp3` `*.ogg` `*.flac` `*.bnk` `*.wem` … |
 | `:video` | `*.mp4` `*.mov` `*.mkv` `*.bik` … |
 | `:models` | `*.fbx` `*.blend` `*.glb` `*.abc` … |
 | `:archives` | `*.zip` `*.tar` `*.7z` `*.pak` … |

@@ -12,8 +12,8 @@
        `/anchored`    — leading `/` anchors at root
        P4 `...`       — `foo/...` recursive subtree
        P4 `*` and `%n` — same semantics as in `clj-p4.view`
-     Built-in categorised lists (`:images`, `:audio`, …) ship in
-     `resources/clj_p4/excludes/binaries.edn` and are selected via the
+     Built-in categorised lists (`:images`, `:audio`, …) ship in the
+     `builtin-binaries` def below and are selected via the
      `:categories` option on `exclude-patterns`. The resolver returns
      two parallel lists (`:excludes` and `:includes`); a path is
      dropped iff some `:excludes` matches AND no `:includes` matches
@@ -25,8 +25,6 @@
 
    Pure data layer."
   (:require [clj-p4.view :as view]
-            [clojure.edn :as edn]
-            [clojure.java.io :as io]
             [clojure.string :as str]))
 
 (defn pattern->re
@@ -51,20 +49,65 @@
         suffix    (if dir-only? "(?:/.*)?$" "$")]
     (re-pattern (str prefix body suffix))))
 
-(def ^:private builtin-binaries-resource
-  "Categorised binary patterns shipped with clj-p4. Lazy-loaded so test
-   runs that never touch this file pay no cost."
-  (delay
-    (-> "clj_p4/excludes/binaries.edn"
-        io/resource
-        slurp
-        edn/read-string)))
+(def ^:private builtin-binaries
+  "Categorised binary patterns shipped with clj-p4.
+
+   Curation principle: only include extensions that are *always* a
+   binary container, regardless of variant. Source-form text/config
+   (e.g. `.svg` XML, `.gltf` JSON, `.dae` COLLADA, `.obj` Wavefront
+   text, Unity YAML scenes/prefabs/assets, Unreal `.upluginmanifest`
+   JSON) is intentionally absent — those are code, not assets, and
+   users importing source for review usually want them in git.
+   Type-based filtering (`:rev/type :binary`) catches their binary
+   cousins like `.glb` automatically.
+
+   Opt-in via `:exclude-categories` on `clone!` / `fetch!`. The
+   orthogonal `:exclude-binaries?` option (default true) drops anything
+   Perforce itself classifies as binary, regardless of extension."
+  {:images
+   ["*.png" "*.jpg" "*.jpeg" "*.tga" "*.bmp" "*.tiff" "*.exr" "*.hdr"
+    "*.psd" "*.dds" "*.ico" "*.gif" "*.webp"]
+
+   :audio
+   ;; `.bnk` and `.wem` are Wwise (Audiokinetic) audio middleware:
+   ;; sound bank container and encoded audio asset, both always binary.
+   ["*.wav" "*.mp3" "*.ogg" "*.flac" "*.aiff" "*.wma" "*.aac" "*.opus"
+    "*.mid" "*.bnk" "*.wem"]
+
+   :video
+   ["*.mp4" "*.avi" "*.mov" "*.mkv" "*.wmv" "*.bik" "*.webm"]
+
+   :models
+   ;; Always-binary 3D model containers. `.obj`/`.dae`/`.gltf`/`.ply`/`.stl`
+   ;; have text variants and are deliberately excluded; their binary cousin
+   ;; `.glb` (binary glTF) is included.
+   ["*.fbx" "*.blend" "*.max" "*.ma" "*.mb" "*.3ds" "*.abc" "*.glb"]
+
+   :archives
+   ["*.pak" "*.zip" "*.tar" "*.gz" "*.7z" "*.rar"]
+
+   :fonts
+   ["*.ttf" "*.otf" "*.woff" "*.woff2" "*.eot"]
+
+   :documents
+   ["*.pdf" "*.doc" "*.docx" "*.xls" "*.xlsx" "*.ppt" "*.pptx"]
+
+   :compiled
+   ["*.dll" "*.so" "*.dylib" "*.exe" "*.lib" "*.a" "*.o" "*.pdb" "*.ilk"
+    "*.exp" "*.jar" "*.war" "*.class" "*.pyc" "*.pyo" "*.whl"]
+
+   :engine-assets
+   ;; Unreal cooked binary content only. Unity scene/prefab/asset YAML
+   ;; (`.unity`, `.prefab`, `.asset`, `.anim`, `.controller`) and Unreal
+   ;; `.upluginmanifest` (JSON config) are deliberately omitted — they're
+   ;; text and typically version-controlled alongside code.
+   ["*.uasset" "*.umap" "*.upk" "*.udk" "*.ubulk" "*.uexp"]})
 
 (defn binary-categories
   "The set of category keywords available in clj-p4's built-in
-   `binaries.edn` resource. Useful for tooling and validation."
+   `builtin-binaries` def. Useful for tooling and validation."
   []
-  (-> @builtin-binaries-resource keys set))
+  (-> builtin-binaries keys set))
 
 (defn- select-categories
   "Pick `categories` from `resource-map`. `categories` is `:all` (every
@@ -88,7 +131,7 @@
    Options:
      :categories           — `:all` or a set of category keywords selected
                              from the resource. When set, the built-in
-                             `binaries.edn` is used as the universe;
+                             `builtin-binaries` is used as the universe;
                              `:resource`, if also given, supersedes it.
      :resource             — a map of category → seq-of-pattern-strings.
                              Used as the universe `:categories` selects
@@ -105,7 +148,7 @@
    then user `:excludes`)."
   [{:keys [categories resource no-default-excludes? excludes includes]}]
   (let [universe (or resource
-                     (when categories @builtin-binaries-resource))
+                     (when categories builtin-binaries))
         defaults (cond
                    categories             (select-categories universe categories)
                    no-default-excludes?   nil

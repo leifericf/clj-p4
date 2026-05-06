@@ -429,7 +429,7 @@
                         import every revision regardless of type.
      :exclude-categories `:all` or a set of category keywords (e.g.
                         `#{:images :audio}`) selecting from clj-p4's
-                        built-in `binaries.edn`. Composes with
+                        built-in binary category set. Composes with
                         `:excludes`, `:includes`, and
                         `:exclude-binaries?`.
      :excludes          seq of pattern strings to add on top of

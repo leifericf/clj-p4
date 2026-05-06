@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Added
+
+- `:audio` category now also matches Wwise (Audiokinetic) audio
+  middleware files: `*.bnk` (sound bank container) and `*.wem`
+  (encoded audio asset). Both are always binary and standard in
+  game-dev depots using Wwise.
+
+### Changed (internal)
+
+- The built-in binary category set moved from
+  `resources/clj_p4/excludes/binaries.edn` to a `def` in
+  `clj-p4.excludes`. Public API unchanged; the `:resource` opt on
+  `clj-p4.excludes/exclude-patterns` still accepts a user-supplied
+  category map.
+
 ## 0.6.0-alpha
 
 Path-pattern policy reworked. `:extra-excludes` is now `:excludes`,
